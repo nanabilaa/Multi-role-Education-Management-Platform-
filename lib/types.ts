@@ -1,4 +1,13 @@
 // lib/types.ts
+// lib/supabase/client.ts
+import { createBrowserClient } from '@supabase/ssr'
+
+export function createClient() {
+  return createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
+}
 export type UserRole = 'admin' | 'tentor' | 'ortu'
 
 export interface Profile {
@@ -77,4 +86,34 @@ export interface DashboardStats {
   spp_belum: number
   jurnal_hari_ini: number
   jurnal_pending: number
+}
+
+// Dana / Keuangan
+export interface Tentor {
+  id: string
+  full_name: string
+}
+
+export interface Transaksi {
+  id?: string
+  jenis: 'pemasukan' | 'pengeluaran'
+  kategori: string
+  nominal: number
+  tanggal: string
+  deskripsi?: string
+  siswa_id?: string
+  tentor_id?: string
+  siswa?: Siswa
+  tentor?: Tentor
+}
+
+// Tipe untuk form DanaClient
+export interface DanaForm {
+  jenis: 'pemasukan' | 'pengeluaran' | ''
+  kategori: string
+  nominal: number
+  siswa_id: string
+  tentor_id: string
+  deskripsi: string
+  tanggal: string
 }

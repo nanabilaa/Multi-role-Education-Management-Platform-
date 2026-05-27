@@ -1,15 +1,26 @@
-// app/(dashboard)/tentor/sesi/[id]/page.tsx
 import { createClient } from '@/lib/supabase/server'
-import { useState } from 'react'
 import { formatTanggal } from '@/lib/utils'
-import { ArrowLeft, Save } from 'lucide-react'
-import { useRouter } from 'next/navigation'
-import Link from 'next/link' // Make sure this line is added
-import { createClient } from '@/lib/supabase/server'
+import { ArrowLeft } from 'lucide-react'
+import Link from 'next/link'
+import { notFound, redirect } from 'next/navigation'
+import SesiDetailClient from './SesiDetailClient'
+import DeleteSesiButton from './DeleteSesiButton'
 
-
-export default async function SesiDetailPage({ params }: { params: { id: string } }) {
+export default async function SesiDetailPage({
+  params,
+}: {
+  params: { id: string }
+}) {
   const supabase = await createClient()
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    redirect('/login')
+  }
+
   const { data: sesi, error } = await supabase
     .from('sesi')
     .select(`
@@ -17,104 +28,97 @@ export default async function SesiDetailPage({ params }: { params: { id: string 
       tanggal,
       jam_mulai,
       mapel,
-      tentor_id,
+      durasi,
       status,
       sesi_siswa(
-        siswa_id,
-        hadir
-      )
+        id,
+        siswa:siswa(id, nama, kelas, sekolah)
+      ),
+      jurnal(id, foto_validasi_url)
     `)
     .eq('id', params.id)
+    .eq('tentor_id', user.id)
     .single()
 
   if (error || !sesi) {
-    return <div>Error: {error?.message || 'Data sesi tidak ditemukan'}</div>
+    notFound()
   }
 
-  const router = useRouter()
-
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    const formData = new FormData(e.target as HTMLFormElement)
-    const { data, error } = await supabase.from('jurnal').insert([
-      {
-        sesi_id: params.id,
-        materi: formData.get('materi')?.toString(),
-        catatan: formData.get('catatan')?.toString(),
-        foto_url: formData.get('foto_url')?.toString(),
-      },
-    ])
-
-    if (error) {
-      alert('Gagal mengirim jurnal: ' + error.message)
-    } else {
-      alert('Jurnal berhasil disubmit')
-      router.push('/tentor/sesi')
-    }
-  }
+  const siswaList = sesi.sesi_siswa?.map((item: any) => item.siswa).filter(Boolean) ?? []
+  const hasJurnal = (sesi.jurnal?.length ?? 0) > 0
 
   return (
-    <div className="space-y-4 p-6">
-      <div>
+    <div className="space-y-6 p-6">
+      <div className="flex items-center justify-between">
         <Link
           href="/tentor/sesi"
-          className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 transition hover:text-[#063D27]"
+          className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-900"
         >
           <ArrowLeft className="h-4 w-4" />
-          Kembali ke daftar sesi
+          Kembali
         </Link>
+
+        <div className="flex gap-3">
+          <Link
+            href={`/tentor/sesi/${sesi.id}/edit`}
+            className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            Edit Sesi
+          </Link>
+          <Link
+            href={`/tentor/sesi/${sesi.id}/masuk`}
+            className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            Masuk Sesi
+          </Link>
+          <Link
+            href={`/tentor/sesi/${sesi.id}/jurnal`}
+            className="rounded-xl bg-[#063D27] px-4 py-2 text-sm font-semibold text-white hover:bg-[#0B5738]"
+          >
+            Jurnal
+          </Link>
+          <DeleteSesiButton sesiId={sesi.id} />
+        </div>
       </div>
 
-      <div className="card">
-        <h2 className="text-2xl font-bold text-slate-900">{sesi.mapel}</h2>
-        <p className="mt-2 text-sm text-slate-500">Tanggal: {formatTanggal(sesi.tanggal)}</p>
-        <p className="text-sm text-slate-500">Jam mulai: {sesi.jam_mulai.slice(0, 5)}</p>
-        <p className="mt-2 text-sm text-slate-500">Status: {sesi.status}</p>
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h1 className="text-2xl font-bold text-slate-900">{sesi.mapel}</h1>
 
-        <form onSubmit={handleSubmit} className="mt-6 space-y-5">
-          <div>
-            <label className="label-base">Materi</label>
-            <input
-              name="materi"
-              type="text"
-              required
-              className="input-base"
-              placeholder="Isi materi yang diajarkan"
-            />
-          </div>
+        <div className="mt-4 grid gap-3 text-sm text-slate-600 md:grid-cols-2">
+          <p>
+            <span className="font-semibold text-slate-900">Tanggal:</span> {formatTanggal(sesi.tanggal)}
+          </p>
+          <p>
+            <span className="font-semibold text-slate-900">Jam Mulai:</span> {sesi.jam_mulai?.slice(0, 5) || '-'}
+          </p>
+          <p>
+            <span className="font-semibold text-slate-900">Durasi:</span> {sesi.durasi} menit
+          </p>
+          <p>
+            <span className="font-semibold text-slate-900">Status:</span> {sesi.status}
+          </p>
+        </div>
 
-          <div>
-            <label className="label-base">Catatan</label>
-            <textarea
-              name="catatan"
-              rows={4}
-              required
-              className="input-base resize-none"
-              placeholder="Tuliskan catatan singkat mengenai sesi ini"
-            />
+        <div className="mt-5">
+          <p className="mb-2 text-sm font-semibold text-slate-900">Murid</p>
+          <div className="flex flex-wrap gap-2">
+            {siswaList.length > 0 ? (
+              siswaList.map((siswa: any) => (
+                <span
+                  key={siswa.id}
+                  className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-700"
+                >
+                  {siswa.nama} {siswa.kelas ? `• ${siswa.kelas}` : ''}
+                </span>
+              ))
+            ) : (
+              <span className="text-sm text-slate-500">Belum ada murid</span>
+            )}
           </div>
-
-          <div>
-            <label className="label-base">Upload Foto Dokumentasi</label>
-            <input
-              name="foto_url"
-              type="text"
-              className="input-base"
-              placeholder="URL foto dokumentasi"
-            />
-          </div>
-
-          <div className="mt-6 flex justify-end gap-3">
-            <button
-              type="submit"
-              className="inline-flex items-center gap-2 rounded-xl bg-[#063D27] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#0B5738]"
-            >
-              <Save className="h-4 w-4" />
-              Simpan Jurnal
-            </button>
-          </div>
-        </form>
+        </div>
       </div>
+
+      <SesiDetailClient sesiId={sesi.id} initialStatus={sesi.status} hasJurnal={hasJurnal} />
     </div>
   )
 }

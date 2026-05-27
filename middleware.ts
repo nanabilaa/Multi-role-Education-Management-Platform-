@@ -3,63 +3,120 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({ request })
+  let response = NextResponse.next({
+    request,
+  })
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() { return request.cookies.getAll() },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-          supabaseResponse = NextResponse.next({ request })
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options))
-        },
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return response
+  }
+
+  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll()
       },
-    }
+
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value }) => {
+          request.cookies.set(name, value)
+        })
+
+        response = NextResponse.next({
+          request,
+        })
+
+        cookiesToSet.forEach(({ name, value, options }) => {
+          response.cookies.set(name, value, options)
+        })
+      },
+    },
+  })
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  const pathname = request.nextUrl.pathname
+
+  const publicRoutes = ['/login', '/register', '/test-supabase']
+
+  const isPublicRoute = publicRoutes.some((route) =>
+    pathname.startsWith(route)
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user && !request.nextUrl.pathname.startsWith('/login')) {
+  if (!user && !isPublicRoute) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  if (user && request.nextUrl.pathname === '/login') {
+  if (user && pathname.startsWith('/login')) {
     const { data: profile } = await supabase
       .from('profiles')
       .select('role')
       .eq('id', user.id)
       .single()
 
-    console.log('=== LOGIN REDIRECT ===')
-    console.log('user id:', user.id)
-    console.log('user email:', user.email)
-    console.log('profile data:', profile)
+    const role = profile?.role
 
-    const role = profile?.role ?? 'ortu'
-    return NextResponse.redirect(new URL(`/${role}`, request.url))
+    if (role === 'admin') {
+      return NextResponse.redirect(new URL('/admin', request.url))
+    }
+
+    if (role === 'ortu') {
+      return NextResponse.redirect(new URL('/ortu/dashboard', request.url))
+    }
+
+    if (role === 'tentor') {
+      return NextResponse.redirect(new URL('/tentor', request.url))
+    }
+
+    if (role === 'siswa') {
+      return NextResponse.redirect(new URL('/siswa', request.url))
+    }
+
+    return NextResponse.redirect(new URL('/ortu/dashboard', request.url))
   }
 
-  // Proteksi halaman /admin
-  if (request.nextUrl.pathname.startsWith('/admin')) {
+  if (pathname.startsWith('/admin')) {
+    if (!user) {
+      return NextResponse.redirect(new URL('/login', request.url))
+    }
+
     const { data: profile } = await supabase
       .from('profiles')
       .select('role')
-      .eq('id', user!.id)
+      .eq('id', user.id)
       .single()
 
     if (profile?.role !== 'admin') {
-      console.log('BUKAN ADMIN, role:', profile?.role)
-      return NextResponse.redirect(new URL('/login', request.url))
+      return NextResponse.redirect(new URL('/ortu/dashboard', request.url))
     }
   }
 
-  return supabaseResponse
+  if (pathname.startsWith('/ortu')) {
+    if (!user) {
+      return NextResponse.redirect(new URL('/login', request.url))
+    }
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    if (profile?.role === 'admin') {
+      return NextResponse.redirect(new URL('/admin', request.url))
+    }
+  }
+
+  return response
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|images|api|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+  ],
 }

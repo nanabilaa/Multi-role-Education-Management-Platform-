@@ -1,273 +1,328 @@
-// ============================================================
-// FILE: app/(dashboard)/tentor/sesi/buat/page.tsx
-// ============================================================
-'use client'
-
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
-import { Plus, Trash2, Loader2, ArrowLeft, Clock } from 'lucide-react'
 import Link from 'next/link'
-import { DAFTAR_MAPEL } from '@/lib/utils'
+import { redirect } from 'next/navigation'
+import { revalidatePath } from 'next/cache'
+import { createClient } from '@/lib/supabase/server'
+import {
+  ArrowLeft,
+  CalendarDays,
+  CheckCircle2,
+  Clock3,
+  GraduationCap,
+  Save,
+  UsersRound,
+} from 'lucide-react'
 
-type Siswa = { id: string; nama: string; kelas: string }
+type SiswaRow = {
+  id: string
+  nama: string
+  kelas: string | null
+  sekolah: string | null
+  aktif: boolean | null
+}
 
-export default function BuatSesiPage() {
-  const router = useRouter()
-  const supabase = createClient()
-  const [siswaList, setSiswaList] = useState<Siswa[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+async function getSiswaAktif() {
+  const supabase = await createClient()
 
-  const [form, setForm] = useState({
-    tanggal: new Date().toISOString().split('T')[0],
-    jam_mulai: '08:00',
-    durasi: 60 as 60 | 70 | 90,
-    mapel: '',
-    siswa_ids: [] as string[],
-  })
+  const { data, error } = await supabase
+    .from('siswa')
+    .select('id, nama, kelas, sekolah, aktif')
+    .eq('aktif', true)
+    .order('nama', { ascending: true })
 
-  useEffect(() => {
-    supabase.from('siswa').select('id, nama, kelas').eq('aktif', true).order('nama')
-      .then(({ data }) => setSiswaList(data ?? []))
-  }, [])
-
-  // Hitung estimasi honor
-  const rateMap: Record<number, number> = { 60: 75000, 70: 85000, 90: 100000 }
-  const estimasiHonor = rateMap[form.durasi] ?? 75000
-
-  const toggleSiswa = (id: string) => {
-    setForm(p => ({
-      ...p,
-      siswa_ids: p.siswa_ids.includes(id)
-        ? p.siswa_ids.filter(s => s !== id)
-        : [...p.siswa_ids, id]
-    }))
+  if (error) {
+    console.log('GET SISWA AKTIF ERROR:', error)
+    return []
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!form.mapel) { setError('Pilih mata pelajaran terlebih dahulu'); return }
-    if (form.siswa_ids.length === 0) { setError('Pilih minimal 1 siswa'); return }
+  return (data ?? []) as SiswaRow[]
+}
 
-    setLoading(true)
-    setError('')
+export default async function BuatSesiTentorPage() {
+  const siswaList = await getSiswaAktif()
 
-    const { data: { user } } = await supabase.auth.getUser()
+  async function handleCreateSesi(formData: FormData) {
+    'use server'
 
-    const { data: sesi, error: sesiErr } = await supabase.from('sesi').insert({
-      tentor_id: user!.id,
-      tanggal: form.tanggal,
-      jam_mulai: form.jam_mulai,
-      durasi: form.durasi,
-      mapel: form.mapel,
-      status: 'terjadwal',
-    }).select().single()
+    const supabase = await createClient()
 
-    if (sesiErr || !sesi) {
-      setError('Gagal membuat sesi. Coba lagi.')
-      setLoading(false)
-      return
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    if (!user) redirect('/login')
+
+    const tanggal = String(formData.get('tanggal') || '').trim()
+    const jamMulai = String(formData.get('jam_mulai') || '').trim()
+    const durasi = Number(formData.get('durasi') || 60)
+    const mapel = String(formData.get('mapel') || '').trim()
+    const siswaIds = formData
+      .getAll('siswa_ids')
+      .map((item) => String(item))
+      .filter(Boolean)
+
+    if (!tanggal || !jamMulai || !mapel) {
+      throw new Error('Tanggal, jam mulai, dan mapel wajib diisi.')
     }
 
-    await supabase.from('sesi_siswa').insert(
-      form.siswa_ids.map(sid => ({ sesi_id: sesi.id, siswa_id: sid }))
-    )
+    if (siswaIds.length === 0) {
+      throw new Error('Pilih minimal satu siswa.')
+    }
 
-    router.push('/tentor')
-    router.refresh()
+    const { data: sesiBaru, error: sesiError } = await supabase
+      .from('sesi')
+      .insert({
+        tentor_id: user.id,
+        tanggal,
+        jam_mulai: jamMulai,
+        durasi,
+        mapel,
+        status: 'terjadwal',
+      })
+      .select('id')
+      .single()
+
+    if (sesiError || !sesiBaru) {
+      throw new Error(
+        'Gagal menambahkan sesi: ' + (sesiError?.message || 'Sesi gagal dibuat')
+      )
+    }
+
+    const relasiPayload = siswaIds.map((siswaId) => ({
+      sesi_id: sesiBaru.id,
+      siswa_id: siswaId,
+      hadir: null,
+      materi: null,
+      deskripsi: null,
+    }))
+
+    const { error: relasiError } = await supabase
+      .from('sesi_siswa')
+      .insert(relasiPayload)
+
+    if (relasiError) {
+      await supabase.from('sesi').delete().eq('id', sesiBaru.id)
+
+      throw new Error(
+        'Sesi dibuat, tapi gagal menambahkan siswa: ' + relasiError.message
+      )
+    }
+
+    revalidatePath('/tentor')
+    revalidatePath('/tentor/sesi')
+    revalidatePath('/tentor/jurnal')
+    revalidatePath('/admin')
+    revalidatePath('/admin/jadwal')
+    revalidatePath('/ortu/dashboard')
+    revalidatePath('/ortu/jadwal')
+
+    redirect('/tentor/sesi')
   }
 
   return (
-    <>
-      <style>{`
-        .bs-wrap { font-family: 'DM Sans', sans-serif; max-width: 680px; margin: 0 auto; padding: 24px; }
-        .bs-back { display: flex; align-items: center; gap: 8px; color: #64748b; font-size: 13px; text-decoration: none; margin-bottom: 20px; transition: color 0.15s; }
-        .bs-back:hover { color: #1a3a8f; }
-        .bs-title { font-size: 20px; font-weight: 700; color: #0f172a; letter-spacing: -0.4px; margin-bottom: 4px; }
-        .bs-sub { font-size: 12.5px; color: #94a3b8; margin-bottom: 24px; }
-        .bs-card { background: #fff; border-radius: 18px; border: 1px solid #f1f5f9; padding: 20px; margin-bottom: 14px; }
-        .bs-card-title { font-size: 13px; font-weight: 600; color: #0f172a; margin-bottom: 14px; }
-        .bs-label { display: block; font-size: 12px; font-weight: 500; color: #374151; margin-bottom: 6px; }
-        .bs-input {
-          width: 100%; padding: 10px 14px; border-radius: 10px;
-          border: 1.5px solid #e2e8f0; background: #f8fafc;
-          font-size: 13px; color: #0f172a; outline: none;
-          transition: border 0.15s, background 0.15s, box-shadow 0.15s;
-          font-family: inherit; box-sizing: border-box;
-        }
-        .bs-input:focus { border-color: #2557d6; background: #fff; box-shadow: 0 0 0 3px rgba(37,87,214,0.08); }
-        .bs-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
-        .bs-field { margin-bottom: 12px; }
+    <main className="min-h-screen bg-[#F8FAF7] px-4 py-5 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-5xl space-y-5">
+        <section className="rounded-[32px] border border-[#DDE9DB] bg-white p-6 sm:p-7">
+          <Link
+            href="/tentor/sesi"
+            className="mb-5 inline-flex h-10 items-center justify-center gap-2 rounded-full border border-[#DDE9DB] bg-[#F3F8F1] px-4 text-xs font-black text-[#063D27] transition hover:bg-[#EAF3E8]"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Kembali
+          </Link>
 
-        /* Durasi Pills */
-        .dur-pills { display: flex; gap: 8px; }
-        .dur-pill {
-          flex: 1; padding: 10px; border-radius: 10px; text-align: center;
-          border: 1.5px solid #e2e8f0; background: #f8fafc;
-          cursor: pointer; transition: all 0.15s;
-          font-family: inherit;
-        }
-        .dur-pill:hover { border-color: #2557d6; background: #eff6ff; }
-        .dur-pill.active { border-color: #1a3a8f; background: #1a3a8f; color: #fff; }
-        .dur-pill-val { font-size: 16px; font-weight: 700; line-height: 1; }
-        .dur-pill-lbl { font-size: 10px; opacity: 0.7; margin-top: 2px; }
-
-        /* Siswa pills */
-        .siswa-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 6px; max-height: 240px; overflow-y: auto; }
-        .siswa-pill {
-          display: flex; align-items: center; gap: 8px;
-          padding: 8px 10px; border-radius: 10px;
-          border: 1.5px solid #e2e8f0; background: #f8fafc;
-          cursor: pointer; transition: all 0.15s; text-align: left;
-          font-family: inherit; width: 100%;
-        }
-        .siswa-pill:hover { border-color: #2557d6; background: #eff6ff; }
-        .siswa-pill.selected { border-color: #1a3a8f; background: #eff6ff; }
-        .siswa-check {
-          width: 18px; height: 18px; border-radius: 5px;
-          border: 1.5px solid #cbd5e1; background: #fff;
-          display: flex; align-items: center; justify-content: center;
-          flex-shrink: 0; transition: all 0.15s;
-        }
-        .siswa-pill.selected .siswa-check { background: #1a3a8f; border-color: #1a3a8f; }
-
-        /* Honor preview */
-        .honor-box {
-          background: linear-gradient(135deg, #1a3a8f, #2557d6);
-          border-radius: 14px; padding: 16px 20px;
-          display: flex; align-items: center; justify-content: space-between;
-          margin-bottom: 14px;
-        }
-        .honor-label { font-size: 12px; color: rgba(255,255,255,0.7); margin-bottom: 4px; }
-        .honor-val { font-size: 22px; font-weight: 700; color: '#fff'; letter-spacing: -0.5px; }
-
-        /* Error */
-        .bs-error { background: #fff1f2; border: 1px solid #fecdd3; color: #e11d48; font-size: 12px; border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; }
-
-        /* Submit */
-        .bs-submit {
-          width: 100%; padding: 13px; border-radius: 12px; border: none;
-          background: #1a3a8f; color: #fff; font-size: 14px; font-weight: 600;
-          cursor: pointer; font-family: inherit; transition: background 0.15s;
-          display: flex; align-items: center; justify-content: center; gap: 8px;
-        }
-        .bs-submit:hover:not(:disabled) { background: #2557d6; }
-        .bs-submit:disabled { background: #94a3b8; cursor: not-allowed; }
-
-        @media (max-width: 640px) {
-          .bs-wrap { padding: 16px 14px; }
-          .bs-grid2 { grid-template-columns: 1fr; }
-          .siswa-grid { grid-template-columns: 1fr 1fr; }
-        }
-      `}</style>
-
-      <div className="bs-wrap">
-        <Link href="/tentor" className="bs-back">
-          <ArrowLeft style={{ width: 16, height: 16 }} /> Kembali ke Dashboard
-        </Link>
-        <h1 className="bs-title">Buat Sesi Kelas</h1>
-        <p className="bs-sub">Isi detail sesi yang akan dilaksanakan</p>
-
-        {error && <div className="bs-error">{error}</div>}
-
-        {/* Estimasi Honor */}
-        <div className="honor-box">
-          <div>
-            <p className="honor-label">Estimasi Honor Sesi Ini</p>
-            <p style={{ fontSize: 22, fontWeight: 700, color: '#fff', letterSpacing: '-0.5px' }}>
-              Rp {estimasiHonor.toLocaleString('id-ID')}
-            </p>
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', marginBottom: 2 }}>Durasi dipilih</p>
-            <p style={{ fontSize: 20, fontWeight: 700, color: '#ffd000' }}>{form.durasi} mnt</p>
-          </div>
-        </div>
-
-        <form onSubmit={handleSubmit}>
-          {/* Waktu & Mapel */}
-          <div className="bs-card">
-            <p className="bs-card-title">📅 Waktu & Mata Pelajaran</p>
-            <div className="bs-grid2">
-              <div className="bs-field">
-                <label className="bs-label">Tanggal *</label>
-                <input type="date" className="bs-input" value={form.tanggal}
-                  onChange={e => setForm(p => ({ ...p, tanggal: e.target.value }))} required />
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full bg-[#F3F8F1] px-4 py-2 text-xs font-bold text-[#063D27]">
+                <CalendarDays className="h-4 w-4" />
+                Buat Jadwal
               </div>
-              <div className="bs-field">
-                <label className="bs-label">Jam Mulai *</label>
-                <input type="time" className="bs-input" value={form.jam_mulai}
-                  onChange={e => setForm(p => ({ ...p, jam_mulai: e.target.value }))} required />
+
+              <h1 className="mt-5 text-3xl font-black tracking-tight text-[#063D27] sm:text-4xl">
+                Buat Sesi Baru
+              </h1>
+
+              <p className="mt-3 max-w-2xl text-sm font-medium leading-7 text-slate-500">
+                Isi jadwal mengajar dengan sederhana. Pilih siswa lewat daftar checkbox di bawah.
+              </p>
+            </div>
+
+            <div className="rounded-[24px] border border-[#DDE9DB] bg-[#FAFCF9] p-4">
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">
+                Siswa Aktif
+              </p>
+              <p className="mt-1 text-3xl font-black text-[#063D27]">
+                {siswaList.length}
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <form
+          action={handleCreateSesi}
+          className="grid gap-5 lg:grid-cols-[1fr_340px]"
+        >
+          <section className="rounded-[28px] border border-[#DDE9DB] bg-white p-5 sm:p-6">
+            <div className="mb-6 flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[18px] bg-[#F3F8F1] text-[#063D27]">
+                <Clock3 className="h-5 w-5" />
+              </div>
+
+              <div>
+                <h2 className="text-lg font-black text-[#063D27]">
+                  Detail Sesi
+                </h2>
+                <p className="mt-1 text-sm font-semibold leading-6 text-slate-400">
+                  Tentukan tanggal, jam, durasi, dan mata pelajaran.
+                </p>
               </div>
             </div>
-            <div className="bs-field">
-              <label className="bs-label">Mata Pelajaran *</label>
-              <select className="bs-input" value={form.mapel}
-                onChange={e => setForm(p => ({ ...p, mapel: e.target.value }))} required>
-                <option value="">Pilih Mata Pelajaran</option>
-                {DAFTAR_MAPEL.map(m => <option key={m} value={m}>{m}</option>)}
-              </select>
+
+            <div className="space-y-5">
+              <div className="grid gap-5 md:grid-cols-2">
+                <div>
+                  <label
+                    htmlFor="tanggal"
+                    className="mb-2 block text-xs font-black uppercase tracking-[0.14em] text-slate-400"
+                  >
+                    Tanggal <span className="text-red-500">*</span>
+                  </label>
+
+                  <input
+                    id="tanggal"
+                    name="tanggal"
+                    type="date"
+                    required
+                    className="h-12 w-full rounded-full border border-[#DDE9DB] bg-[#FAFCF9] px-4 text-sm font-bold text-slate-700 outline-none transition focus:border-[#063D27] focus:bg-white focus:ring-4 focus:ring-[#063D27]/10"
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="jam_mulai"
+                    className="mb-2 block text-xs font-black uppercase tracking-[0.14em] text-slate-400"
+                  >
+                    Jam Mulai <span className="text-red-500">*</span>
+                  </label>
+
+                  <input
+                    id="jam_mulai"
+                    name="jam_mulai"
+                    type="time"
+                    required
+                    className="h-12 w-full rounded-full border border-[#DDE9DB] bg-[#FAFCF9] px-4 text-sm font-bold text-slate-700 outline-none transition focus:border-[#063D27] focus:bg-white focus:ring-4 focus:ring-[#063D27]/10"
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-5 md:grid-cols-2">
+                <div>
+                  <label
+                    htmlFor="durasi"
+                    className="mb-2 block text-xs font-black uppercase tracking-[0.14em] text-slate-400"
+                  >
+                    Durasi
+                  </label>
+
+                  <select
+                    id="durasi"
+                    name="durasi"
+                    defaultValue="60"
+                    className="h-12 w-full rounded-full border border-[#DDE9DB] bg-[#FAFCF9] px-4 text-sm font-bold text-slate-700 outline-none transition focus:border-[#063D27] focus:bg-white focus:ring-4 focus:ring-[#063D27]/10"
+                  >
+                    <option value="60">60 menit</option>
+                    <option value="70">70 menit</option>
+                    <option value="90">90 menit</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="mapel"
+                    className="mb-2 block text-xs font-black uppercase tracking-[0.14em] text-slate-400"
+                  >
+                    Mapel <span className="text-red-500">*</span>
+                  </label>
+
+                  <input
+                    id="mapel"
+                    name="mapel"
+                    type="text"
+                    required
+                    placeholder="Contoh: Matematika"
+                    className="h-12 w-full rounded-full border border-[#DDE9DB] bg-[#FAFCF9] px-4 text-sm font-bold text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-[#063D27] focus:bg-white focus:ring-4 focus:ring-[#063D27]/10"
+                  />
+                </div>
+              </div>
             </div>
-            <div className="bs-field">
-              <label className="bs-label">Durasi Sesi *</label>
-              <div className="dur-pills">
-                {([60, 70, 90] as const).map(d => (
-                  <button key={d} type="button"
-                    className={`dur-pill ${form.durasi === d ? 'active' : ''}`}
-                    onClick={() => setForm(p => ({ ...p, durasi: d }))}>
-                    <div className="dur-pill-val">{d}</div>
-                    <div className="dur-pill-lbl">menit</div>
-                    <div style={{ fontSize: 10, marginTop: 3, opacity: 0.8 }}>
-                      Rp {(rateMap[d] / 1000).toFixed(0)}k
+          </section>
+
+          <section className="rounded-[28px] border border-[#DDE9DB] bg-white p-5 sm:p-6">
+            <div className="mb-5 flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[18px] bg-[#F3F8F1] text-[#063D27]">
+                <UsersRound className="h-5 w-5" />
+              </div>
+
+              <div>
+                <h2 className="text-lg font-black text-[#063D27]">
+                  Pilih Siswa
+                </h2>
+                <p className="mt-1 text-sm font-semibold leading-6 text-slate-400">
+                  Minimal pilih satu siswa.
+                </p>
+              </div>
+            </div>
+
+            {siswaList.length === 0 ? (
+              <div className="rounded-[22px] border border-dashed border-[#DDE9DB] bg-[#FAFCF9] px-5 py-8 text-center">
+                <p className="text-sm font-bold text-slate-400">
+                  Belum ada siswa aktif.
+                </p>
+              </div>
+            ) : (
+              <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
+                {siswaList.map((siswa) => (
+                  <label
+                    key={siswa.id}
+                    className="flex cursor-pointer items-start gap-3 rounded-[20px] border border-[#EEF3EC] bg-[#FAFCF9] p-3 transition hover:border-[#DDE9DB] hover:bg-white"
+                  >
+                    <input
+                      type="checkbox"
+                      name="siswa_ids"
+                      value={siswa.id}
+                      className="mt-1 h-4 w-4 rounded border-slate-300 accent-[#063D27]"
+                    />
+
+                    <div className="min-w-0">
+                      <p className="text-sm font-black text-[#063D27]">
+                        {siswa.nama}
+                      </p>
+
+                      <p className="mt-0.5 text-xs font-semibold leading-5 text-slate-400">
+                        {siswa.kelas ?? '-'} · {siswa.sekolah ?? '-'}
+                      </p>
                     </div>
-                  </button>
+                  </label>
                 ))}
               </div>
-            </div>
-          </div>
+            )}
 
-          {/* Pilih Siswa */}
-          <div className="bs-card">
-            <p className="bs-card-title">
-              👥 Pilih Siswa
-              <span style={{ fontSize: 11, color: '#2557d6', fontWeight: 400, marginLeft: 8 }}>
-                {form.siswa_ids.length} dipilih
-              </span>
-            </p>
-            <div className="siswa-grid">
-              {siswaList.map(s => (
-                <button key={s.id} type="button"
-                  className={`siswa-pill ${form.siswa_ids.includes(s.id) ? 'selected' : ''}`}
-                  onClick={() => toggleSiswa(s.id)}>
-                  <div className="siswa-check">
-                    {form.siswa_ids.includes(s.id) && (
-                      <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" width="11" height="11">
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                    )}
-                  </div>
-                  <div style={{ minWidth: 0 }}>
-                    <p style={{ fontSize: 12, fontWeight: 500, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.nama}</p>
-                    <p style={{ fontSize: 10, color: '#94a3b8' }}>{s.kelas}</p>
-                  </div>
-                </button>
-              ))}
-              {siswaList.length === 0 && (
-                <p style={{ fontSize: 12, color: '#94a3b8', gridColumn: '1/-1', textAlign: 'center', padding: '16px 0' }}>
-                  Tidak ada siswa aktif
-                </p>
-              )}
-            </div>
-          </div>
+            <div className="mt-5 border-t border-[#EEF3EC] pt-5">
+              <button
+                type="submit"
+                className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#063D27] px-5 text-sm font-black text-white transition hover:bg-[#0B5738]"
+              >
+                <Save className="h-4 w-4" />
+                Simpan Sesi
+              </button>
 
-          <button type="submit" disabled={loading} className="bs-submit">
-            {loading
-              ? <><Loader2 style={{ width: 16, height: 16 }} className="animate-spin" /> Menyimpan...</>
-              : <><Plus style={{ width: 16, height: 16 }} /> Buat Sesi Kelas</>}
-          </button>
+              <p className="mt-3 flex items-start gap-2 text-xs font-semibold leading-5 text-slate-400">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#063D27]" />
+                Setelah disimpan, sesi akan muncul di dashboard tentor, admin, dan orang tua siswa terkait.
+              </p>
+            </div>
+          </section>
         </form>
       </div>
-    </>
+    </main>
   )
 }

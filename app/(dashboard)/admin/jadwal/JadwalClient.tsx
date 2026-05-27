@@ -101,15 +101,13 @@ export default function JadwalClient({ tentorList, siswaList }: Props) {
           </select>
         </div>
         <button onClick={() => { setFilterTanggal(''); setFilterStatus('') }} className="btn-outline">Reset</button>
-        <button onClick={() => setShowModal(true)} className="btn-primary ml-auto">
-          <Plus className="w-3.5 h-3.5" /> Buat Jadwal
-        </button>
+
       </div>
 
       {/* Tabel Sesi */}
       <div className="card overflow-x-auto">
         {loading ? (
-          <div className="flex items-center justify-center py-12">
+          <div className="flex items-center justxify-center py-12">
             <Loader2 className="w-6 h-6 animate-spin text-green-500" />
           </div>
         ) : (

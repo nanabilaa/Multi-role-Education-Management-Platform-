@@ -86,3 +86,23 @@
     @apply p-4;
   }
 }
+@media print {
+  body {
+    background: white !important;
+  }
+
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+}
+@media print {
+  body {
+    background: white !important;
+  }
+
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+}
