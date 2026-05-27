@@ -1,8 +1,27 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+Siap amoree, ini versi lengkapnya. Copy dari `cat` sampai `EOF`:
+
+````bash
+cat <<'EOF' > README.md
+# Multi-role Education Management Platform
+
+This is a [Next.js](https://nextjs.org) project for a multi-role education management platform. This application is built to support tutoring management, including student data, tutoring sessions, learning journals, SPP/payment records, financial transactions, tutor honor, and role-based dashboards.
 
 ## Getting Started
 
-First, run the development server:
+First, install the dependencies:
+
+```bash
+npm install
+````
+
+Create `.env.local` file in the root project:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
+
+Then, run the development server:
 
 ```bash
 npm run dev
@@ -16,21 +35,105 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Tech Stack
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+This project uses:
 
-## Learn More
+* Next.js 14 App Router
+* TypeScript
+* Tailwind CSS
+* Supabase Auth
+* Supabase Database
+* Supabase Storage
 
-To learn more about Next.js, take a look at the following resources:
+## Main Features
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+* Multi-role login system
+* Admin dashboard
+* Tutor dashboard
+* Parent dashboard
+* Superadmin dashboard
+* Student management
+* Tutoring session management
+* Learning journal management
+* SPP/payment management
+* Financial transaction records
+* Tutor honor management
+* Journal validation photo upload
+* Backup and reset planning for operational data
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## User Roles
+
+### Superadmin
+
+Superadmin manages admins, users, audit logs, and operational backup/reset features.
+
+### Admin
+
+Admin manages students, tutoring sessions, learning journals, SPP payments, financial transactions, and tutor honor data.
+
+### Tutor
+
+Tutor can create tutoring sessions, view schedules, submit learning journals, upload validation photos, and check honor data.
+
+### Parent
+
+Parent can view student schedules, learning journals, SPP bills, and profile information.
+
+## Project Structure
+
+```bash
+app/
+components/
+lib/
+public/
+```
+
+## Environment Variables
+
+This project uses Supabase, so the following environment variables are required:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+```
+
+Do not upload `.env.local` or `.env` to GitHub.
+
+## Git Ignore
+
+Make sure these files and folders are included in `.gitignore`:
+
+```bash
+.env.local
+.env
+node_modules
+.next
+```
+
+## Development Notes
+
+You can start editing the project by modifying files inside the `app/` directory. The page auto-updates as you edit the file.
+
+This project uses the Next.js App Router structure and separates dashboard pages by user role.
 
 ## Deploy on Vercel
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+The easiest way to deploy this Next.js app is using the [Vercel Platform](https://vercel.com).
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Before deploying, add the required Supabase environment variables in your Vercel project settings.
+
+## Status
+
+This project is currently in MVP development.
+EOF
+
+````
+
+Lanjut:
+
+```bash
+git add README.md
+git commit -m "Update README documentation"
+git push
+````
