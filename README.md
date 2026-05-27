@@ -1,4 +1,4 @@
-Siap amoree, ini versi lengkapnya. Copy dari `cat` sampai `EOF`:
+
 
 ````bash
 cat <<'EOF' > README.md
@@ -129,8 +129,6 @@ This project is currently in MVP development.
 EOF
 
 ````
-
-Lanjut:
 
 ```bash
 git add README.md
