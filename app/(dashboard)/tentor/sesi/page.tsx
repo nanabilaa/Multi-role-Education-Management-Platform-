@@ -85,7 +85,7 @@ export default async function TentorSesiPage() {
               </h1>
 
               <p className="mt-3 max-w-2xl text-sm font-medium leading-7 text-slate-500">
-                Semua sesi yang kamu buat dan jadwalkan. Klik detail siswa untuk melihat peserta tanpa tampilan terlalu ramai.
+                Semua sesi yang kamu buat dan jadwalkan. Klik detail siswa untuk melihat peserta
               </p>
             </div>
 
