@@ -22,12 +22,83 @@ import {
 } from 'lucide-react'
 
 type SppStatus = 'lunas' | 'belum'
+type SppReportFilter = 'semua' | 'lunas' | 'cicilan' | 'belum' | 'menunggak'
+type SppReportPaymentStatus = 'lunas' | 'cicilan' | 'belum'
+type JenisKelas = 'Reguler' | 'UTBK' | 'Intensif'
+type JenisKelasFilter = 'semua' | JenisKelas
+
+type FamilyInvoiceItemForm = {
+  clientId: string
+  siswa_id: string
+  nama_item: string
+  bulan: string
+  tahun: string
+  qty: string
+  harga_satuan: string
+}
+
+type FamilyInvoiceSppRef = {
+  id: string
+  dibayar: number
+  status: SppStatus
+  tanggal_bayar: string | null
+}
+
+type FamilyInvoiceItemRow = {
+  id: string
+  siswa_id: string
+  spp_id: string | null
+  nama_item: string
+  periode: string | null
+  qty: number
+  harga_satuan: number
+  gross_total: number
+  discount_allocated: number
+  net_total: number
+  urutan: number
+  siswa?: SiswaRow | null
+  spp?: FamilyInvoiceSppRef | null
+}
+
+type FamilyInvoiceRow = {
+  id: string
+  invoice_no: string
+  ortu_id: string | null
+  tagih_kepada: string
+  tanggal_invoice: string
+  tanggal_jatuh_tempo: string | null
+  subtotal: number
+  diskon: number
+  total: number
+  catatan: string | null
+  created_at: string
+  items?: FamilyInvoiceItemRow[] | null
+}
+
+type SppReportRow = {
+  siswaId: string
+  nama: string
+  kelas: string
+  jenisKelas: JenisKelas
+  sekolah: string | null
+  jumlahInvoice: number
+  invoiceNumbers: string[]
+  nominal: number
+  dibayar: number
+  sisa: number
+  status: SppReportPaymentStatus
+  tanggalBayarTerakhir: string | null
+  keterangan: string[]
+}
 
 type SiswaRow = {
   id: string
   nama: string
   kelas: string
+  jenis_kelas: JenisKelas | null
   sekolah: string | null
+  ortu_id: string | null
+  nama_ortu: string | null
 }
 
 type ProfileRow = {
@@ -48,6 +119,7 @@ type SppRow = {
   tanggal_jatuh_tempo: string | null
   keterangan: string | null
   invoice_no: string | null
+  family_invoice_id: string | null
   created_at: string
   siswa?: SiswaRow | null
 }
@@ -62,6 +134,8 @@ type TransaksiRow = {
   deskripsi: string | null
   created_at: string
 }
+
+const jenisKelasOptions: JenisKelas[] = ['Reguler', 'UTBK', 'Intensif']
 
 const monthNames = [
   '',
@@ -99,15 +173,31 @@ const incomeCategories = [
   'Pendaftaran Siswa',
   'Paket UTBK',
   'Paket Reguler',
+  'Paket Intensif',
   'Pemasukan Lain-lain',
 ]
 
+
+function normalizeJenisKelas(value?: string | null): JenisKelas {
+  if (value === 'UTBK' || value === 'Intensif') return value
+  return 'Reguler'
+}
+
+function getJenisKelasFilterLabel(value: JenisKelasFilter) {
+  return value === 'semua' ? 'Semua Jenis Kelas' : value
+}
+
 function formatCurrency(value: number) {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
-    maximumFractionDigits: 0,
-  }).format(value || 0)
+  const numberValue = Number(value || 0)
+  const isNegative = numberValue < 0
+  const absoluteValue = Math.abs(numberValue)
+
+  const formattedNumber = String(Math.round(absoluteValue)).replace(
+    /\B(?=(\d{3})+(?!\d))/g,
+    '.'
+  )
+
+  return `${isNegative ? '-' : ''}Rp${formattedNumber}`
 }
 
 function formatDate(date?: string | null) {
@@ -120,10 +210,12 @@ function formatDate(date?: string | null) {
   })
 }
 
-function generateInvoiceNo() {
+function generateInvoiceNo(index?: number) {
   const date = new Date().toISOString().slice(0, 10).replaceAll('-', '')
   const random = Math.floor(Math.random() * 9000) + 1000
-  return `INV-${date}-${random}`
+  const suffix = typeof index === 'number' ? `-${String(index + 1).padStart(3, '0')}` : ''
+
+  return `INV-${date}-${random}${suffix}`
 }
 
 function safeFileName(value: string) {
@@ -133,12 +225,84 @@ function safeFileName(value: string) {
     .replace(/[^a-z0-9-]/g, '')
 }
 
+function getSppReportStatus(nominal: number, dibayar: number): SppReportPaymentStatus {
+  if (dibayar <= 0) return 'belum'
+  if (dibayar < nominal) return 'cicilan'
+  return 'lunas'
+}
+
+function getSppReportStatusLabel(status: SppReportPaymentStatus) {
+  if (status === 'lunas') return 'Lunas'
+  if (status === 'cicilan') return 'Cicilan'
+  return 'Belum Bayar'
+}
+
+function getSppReportFilterLabel(filter: SppReportFilter) {
+  if (filter === 'lunas') return 'Lunas'
+  if (filter === 'cicilan') return 'Cicilan'
+  if (filter === 'belum') return 'Belum Bayar'
+  if (filter === 'menunggak') return 'Menunggak'
+  return 'Semua Status'
+}
+
+
+function getLocalDateInputValue(date = new Date()) {
+  const offset = date.getTimezoneOffset()
+  const localDate = new Date(date.getTime() - offset * 60_000)
+  return localDate.toISOString().slice(0, 10)
+}
+
+function getDefaultDueDateInputValue(days = 30) {
+  const date = new Date()
+  date.setDate(date.getDate() + days)
+  return getLocalDateInputValue(date)
+}
+
+function createEmptyFamilyInvoiceItem(): FamilyInvoiceItemForm {
+  return {
+    clientId: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    siswa_id: '',
+    nama_item: '',
+    bulan: String(new Date().getMonth() + 1),
+    tahun: String(new Date().getFullYear()),
+    qty: '1',
+    harga_satuan: '',
+  }
+}
+
+function formatInvoiceCurrency(value: number) {
+  const numericValue = Number(value || 0)
+  const negative = numericValue < 0
+  const [whole, decimals] = Math.abs(numericValue).toFixed(2).split('.')
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+
+  return `${negative ? '-' : ''}Rp${grouped}.${decimals}`
+}
+
+async function loadPublicImageAsDataUrl(path: string) {
+  const response = await fetch(path)
+
+  if (!response.ok) {
+    throw new Error(`Gambar ${path} tidak ditemukan.`)
+  }
+
+  const blob = await response.blob()
+
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onloadend = () => resolve(String(reader.result))
+    reader.onerror = () => reject(new Error(`Gagal membaca gambar ${path}.`))
+    reader.readAsDataURL(blob)
+  })
+}
+
 export default function AdminDanaPage() {
   const supabase = createClient()
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
+  const [familyMessage, setFamilyMessage] = useState('')
 
   const [sppList, setSppList] = useState<SppRow[]>([])
   const [siswaList, setSiswaList] = useState<SiswaRow[]>([])
@@ -146,10 +310,22 @@ export default function AdminDanaPage() {
   const [transaksiList, setTransaksiList] = useState<TransaksiRow[]>([])
 
   const [search, setSearch] = useState('')
+  const [filterJenisKelas, setFilterJenisKelas] = useState<JenisKelasFilter>('semua')
   const [filterSiswaId, setFilterSiswaId] = useState('')
   const [paymentInputs, setPaymentInputs] = useState<Record<string, string>>({})
 
-  const [selectedSiswaId, setSelectedSiswaId] = useState('')
+  // Faktur keluarga: satu faktur dapat berisi banyak anak dan banyak item.
+  const [familyTagihKepada, setFamilyTagihKepada] = useState('')
+  const [familyTanggalInvoice, setFamilyTanggalInvoice] = useState(getLocalDateInputValue())
+  const [familyJatuhTempo, setFamilyJatuhTempo] = useState(getDefaultDueDateInputValue())
+  const [familyDiskon, setFamilyDiskon] = useState('0')
+  const [familyCatatan, setFamilyCatatan] = useState('')
+  const [familyItems, setFamilyItems] = useState<FamilyInvoiceItemForm[]>([
+    createEmptyFamilyInvoiceItem(),
+  ])
+
+  // State lama tetap dipakai untuk generate tagihan massal.
+  const [invoiceJenisKelas, setInvoiceJenisKelas] = useState<JenisKelasFilter>('semua')
   const [bulan, setBulan] = useState(String(new Date().getMonth() + 1))
   const [tahun, setTahun] = useState(String(new Date().getFullYear()))
   const [nominal, setNominal] = useState('500000')
@@ -166,6 +342,11 @@ export default function AdminDanaPage() {
   const [selectedTentorId, setSelectedTentorId] = useState('')
   const [honorNominal, setHonorNominal] = useState('')
   const [honorDesc, setHonorDesc] = useState('')
+
+  const [reportBulan, setReportBulan] = useState(String(new Date().getMonth() + 1))
+  const [reportTahun, setReportTahun] = useState(String(new Date().getFullYear()))
+  const [reportStatus, setReportStatus] = useState<SppReportFilter>('semua')
+  const [reportJenisKelas, setReportJenisKelas] = useState<JenisKelasFilter>('semua')
 
   async function getCurrentUserId() {
     const {
@@ -195,11 +376,13 @@ export default function AdminDanaPage() {
           tanggal_jatuh_tempo,
           keterangan,
           invoice_no,
+          family_invoice_id,
           created_at,
           siswa:siswa_id (
             id,
             nama,
             kelas,
+            jenis_kelas,
             sekolah
           )
         `
@@ -208,7 +391,7 @@ export default function AdminDanaPage() {
 
       supabase
         .from('siswa')
-        .select('id, nama, kelas, sekolah')
+        .select('id, nama, kelas, jenis_kelas, sekolah, ortu_id, nama_ortu')
         .eq('aktif', true)
         .order('nama', { ascending: true }),
 
@@ -241,6 +424,36 @@ export default function AdminDanaPage() {
     loadData()
   }, [])
 
+  const siswaByPaymentType = useMemo(
+    () =>
+      siswaList.filter(
+        (siswa) =>
+          filterJenisKelas === 'semua' || normalizeJenisKelas(siswa.jenis_kelas) === filterJenisKelas
+      ),
+    [filterJenisKelas, siswaList]
+  )
+
+  const siswaByInvoiceType = useMemo(
+    () =>
+      siswaList.filter(
+        (siswa) =>
+          invoiceJenisKelas === 'semua' || normalizeJenisKelas(siswa.jenis_kelas) === invoiceJenisKelas
+      ),
+    [invoiceJenisKelas, siswaList]
+  )
+
+  const jenisKelasCounts = useMemo(
+    () =>
+      siswaList.reduce(
+        (counts, siswa) => {
+          counts[normalizeJenisKelas(siswa.jenis_kelas)] += 1
+          return counts
+        },
+        { Reguler: 0, UTBK: 0, Intensif: 0 } as Record<JenisKelas, number>
+      ),
+    [siswaList]
+  )
+
   const filteredSpp = useMemo(() => {
     const keyword = search.toLowerCase()
 
@@ -253,6 +466,8 @@ export default function AdminDanaPage() {
         item.invoice_no?.toLowerCase().includes(keyword) ||
         item.siswa?.nama?.toLowerCase().includes(keyword) ||
         item.siswa?.kelas?.toLowerCase().includes(keyword) ||
+        normalizeJenisKelas(item.siswa?.jenis_kelas).toLowerCase().includes(keyword) ||
+        item.keterangan?.toLowerCase().includes(keyword) ||
         String(item.tahun).includes(keyword) ||
         monthNames[item.bulan]?.toLowerCase().includes(keyword)
 
@@ -261,6 +476,106 @@ export default function AdminDanaPage() {
   }, [sppList, search, filterSiswaId])
 
   const selectedStudent = siswaList.find((siswa) => siswa.id === filterSiswaId)
+
+  const monthlySppRows = useMemo(() => {
+    const selectedMonth = Number(reportBulan)
+    const selectedYear = Number(reportTahun)
+    const studentMap = new Map(siswaList.map((siswa) => [siswa.id, siswa]))
+    const grouped = new Map<string, Omit<SppReportRow, 'status' | 'sisa'>>()
+
+    sppList
+      .filter((item) => item.bulan === selectedMonth && item.tahun === selectedYear)
+      .forEach((item) => {
+        if (!item.siswa_id) return
+
+        const student = item.siswa ?? studentMap.get(item.siswa_id) ?? null
+        const current = grouped.get(item.siswa_id) ?? {
+          siswaId: item.siswa_id,
+          nama: student?.nama ?? 'Siswa tidak ditemukan',
+          kelas: student?.kelas ?? '-',
+          jenisKelas: normalizeJenisKelas(student?.jenis_kelas),
+          sekolah: student?.sekolah ?? null,
+          jumlahInvoice: 0,
+          invoiceNumbers: [],
+          nominal: 0,
+          dibayar: 0,
+          tanggalBayarTerakhir: null,
+          keterangan: [],
+        }
+
+        current.jumlahInvoice += 1
+        current.nominal += Number(item.nominal || 0)
+        current.dibayar += Number(item.dibayar || 0)
+
+        if (item.invoice_no) {
+          current.invoiceNumbers.push(item.invoice_no)
+        }
+
+        if (item.keterangan) {
+          current.keterangan.push(item.keterangan)
+        }
+
+        if (
+          item.tanggal_bayar &&
+          (!current.tanggalBayarTerakhir || item.tanggal_bayar > current.tanggalBayarTerakhir)
+        ) {
+          current.tanggalBayarTerakhir = item.tanggal_bayar
+        }
+
+        grouped.set(item.siswa_id, current)
+      })
+
+    return Array.from(grouped.values())
+      .map((row): SppReportRow => {
+        const sisa = Math.max(row.nominal - row.dibayar, 0)
+
+        return {
+          ...row,
+          invoiceNumbers: Array.from(new Set(row.invoiceNumbers)),
+          keterangan: Array.from(new Set(row.keterangan)),
+          sisa,
+          status: getSppReportStatus(row.nominal, row.dibayar),
+        }
+      })
+      .sort((a, b) => a.nama.localeCompare(b.nama, 'id-ID'))
+  }, [reportBulan, reportTahun, siswaList, sppList])
+
+  const monthlySppRowsByClass = useMemo(
+    () =>
+      monthlySppRows.filter(
+        (row) => reportJenisKelas === 'semua' || row.jenisKelas === reportJenisKelas
+      ),
+    [monthlySppRows, reportJenisKelas]
+  )
+
+  const filteredMonthlySppRows = useMemo(() => {
+    if (reportStatus === 'semua') return monthlySppRowsByClass
+    if (reportStatus === 'menunggak') return monthlySppRowsByClass.filter((row) => row.sisa > 0)
+
+    return monthlySppRowsByClass.filter((row) => row.status === reportStatus)
+  }, [monthlySppRowsByClass, reportStatus])
+
+  const monthlySppSummary = useMemo(
+    () =>
+      monthlySppRowsByClass.reduce(
+        (summary, row) => {
+          summary.totalTagihan += row.nominal
+          summary.totalDibayar += row.dibayar
+          summary.totalTunggakan += row.sisa
+          summary[row.status] += 1
+          return summary
+        },
+        {
+          totalTagihan: 0,
+          totalDibayar: 0,
+          totalTunggakan: 0,
+          lunas: 0,
+          cicilan: 0,
+          belum: 0,
+        }
+      ),
+    [monthlySppRowsByClass]
+  )
 
   const totalTagihan = sppList.reduce((total, item) => total + Number(item.nominal || 0), 0)
 
@@ -287,15 +602,351 @@ export default function AdminDanaPage() {
   const totalBelumLunas = sppList.filter((item) => item.status === 'belum').length
   const saldoBersih = totalPemasukan - totalPengeluaran
 
-  async function handleGenerateInvoice(e: React.FormEvent<HTMLFormElement>) {
+  async function handleUpdateStudentJenisKelas(studentId: string, jenisKelas: JenisKelas) {
+    setSaving(true)
+    setMessage('')
+
+    const { error } = await supabase
+      .from('siswa')
+      .update({ jenis_kelas: jenisKelas })
+      .eq('id', studentId)
+
+    if (error) {
+      setMessage(`Gagal memperbarui jenis kelas: ${error.message}`)
+      setSaving(false)
+      return
+    }
+
+    setMessage(`Jenis kelas siswa berhasil diubah menjadi ${jenisKelas}.`)
+    setSaving(false)
+    loadData()
+  }
+
+  const familySubtotal = familyItems.reduce((total, item) => {
+    const qty = Number(item.qty || 0)
+    const harga = Number(item.harga_satuan || 0)
+    return total + qty * harga
+  }, 0)
+
+  const familyDiscountNumber = Math.max(Number(familyDiskon || 0), 0)
+  const familyTotal = Math.max(familySubtotal - familyDiscountNumber, 0)
+
+  function updateFamilyItem(
+    clientId: string,
+    field: keyof Omit<FamilyInvoiceItemForm, 'clientId'>,
+    value: string
+  ) {
+    setFamilyItems((current) =>
+      current.map((item) => (item.clientId === clientId ? { ...item, [field]: value } : item))
+    )
+  }
+
+  function handleFamilyStudentChange(clientId: string, studentId: string) {
+    updateFamilyItem(clientId, 'siswa_id', studentId)
+
+    const student = siswaList.find((item) => item.id === studentId)
+
+    if (!familyTagihKepada.trim() && student) {
+      setFamilyTagihKepada(student.nama_ortu?.trim() || `Orang Tua ${student.nama}`)
+    }
+  }
+
+  function addFamilyItem() {
+    setFamilyItems((current) => [...current, createEmptyFamilyInvoiceItem()])
+  }
+
+  function removeFamilyItem(clientId: string) {
+    setFamilyItems((current) => {
+      if (current.length <= 1) return current
+      return current.filter((item) => item.clientId !== clientId)
+    })
+  }
+
+  function resetFamilyInvoiceForm() {
+    setFamilyTagihKepada('')
+    setFamilyTanggalInvoice(getLocalDateInputValue())
+    setFamilyJatuhTempo(getDefaultDueDateInputValue())
+    setFamilyDiskon('0')
+    setFamilyCatatan('')
+    setFamilyItems([createEmptyFamilyInvoiceItem()])
+  }
+
+  async function handleCreateFamilyInvoice(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
+
+    console.log('CREATE FAMILY INVOICE CLICKED')
+
+    setSaving(true)
+    setMessage('')
+    setFamilyMessage('')
+
+    const fail = (text: string) => {
+      console.error('FAMILY INVOICE:', text)
+      setMessage(text)
+      setFamilyMessage(text)
+    }
+
+    try {
+      if (!familyTanggalInvoice) {
+        fail('Tanggal faktur belum diisi.')
+        return
+      }
+
+      if (!familyJatuhTempo) {
+        fail('Tanggal jatuh tempo belum diisi.')
+        return
+      }
+
+      if (familyJatuhTempo < familyTanggalInvoice) {
+        fail('Tanggal jatuh tempo tidak boleh sebelum tanggal faktur.')
+        return
+      }
+
+      if (familyItems.length === 0) {
+        fail('Tambahkan minimal satu item faktur.')
+        return
+      }
+
+      for (let index = 0; index < familyItems.length; index++) {
+        const item = familyItems[index]
+
+        if (!item.siswa_id) {
+          fail(`Item ${index + 1}: pilih anak terlebih dahulu.`)
+          return
+        }
+
+        if (!item.nama_item.trim()) {
+          fail(`Item ${index + 1}: nama item belum diisi.`)
+          return
+        }
+
+        if (!item.bulan) {
+          fail(`Item ${index + 1}: bulan belum dipilih.`)
+          return
+        }
+
+        if (!item.tahun) {
+          fail(`Item ${index + 1}: tahun belum diisi.`)
+          return
+        }
+
+        if (Number(item.qty || 0) <= 0) {
+          fail(`Item ${index + 1}: kuantitas harus lebih dari 0.`)
+          return
+        }
+
+        if (Number(item.harga_satuan || 0) <= 0) {
+          fail(`Item ${index + 1}: biaya satuan harus lebih dari 0.`)
+          return
+        }
+      }
+
+      if (familySubtotal <= 0) {
+        fail('Subtotal faktur harus lebih dari 0.')
+        return
+      }
+
+      if (familyDiscountNumber > familySubtotal) {
+        fail('Diskon tidak boleh lebih besar dari subtotal.')
+        return
+      }
+
+      const selectedStudents = familyItems
+        .map((item) => siswaList.find((student) => student.id === item.siswa_id))
+        .filter((student): student is SiswaRow => Boolean(student))
+
+      if (selectedStudents.length !== familyItems.length) {
+        fail('Ada data siswa yang tidak ditemukan.')
+        return
+      }
+
+      const parentIds = Array.from(
+        new Set(
+          selectedStudents
+            .map((student) => student.ortu_id)
+            .filter((id): id is string => Boolean(id))
+        )
+      )
+
+      /*
+       * Fitur generate akun ortu lama membuat satu akun ortu per siswa,
+       * sehingga kakak-adik bisa memiliki ortu_id yang berbeda walaupun
+       * sebenarnya berasal dari satu keluarga.
+       *
+       * Karena itu faktur keluarga TIDAK diblokir ketika ortu_id berbeda.
+       *
+       * Jika semua anak memakai satu ortu_id yang sama, faktur otomatis
+       * dihubungkan ke akun tersebut.
+       *
+       * Jika ortu_id berbeda, header faktur tetap dibuat tetapi ortu_id
+       * family_invoices disimpan null. Data tagihan per anak tetap aman
+       * karena masing-masing item tetap memiliki siswa_id dan spp_id.
+       */
+      const invoiceParentId =
+        parentIds.length === 1
+          ? parentIds[0]
+          : null
+
+      if (parentIds.length > 1) {
+        console.warn(
+          'FAMILY INVOICE: anak yang dipilih memiliki ortu_id berbeda. Faktur tetap dibuat dan family_invoices.ortu_id disimpan null.'
+        )
+      }
+
+      const childNames = Array.from(new Set(selectedStudents.map((student) => student.nama)))
+
+      const tagihKepada =
+        familyTagihKepada.trim() ||
+        (childNames.length > 0
+          ? `Orang Tua ${childNames.join(' dan ')}`
+          : 'Orang Tua / Wali')
+
+      const rpcItems = familyItems.map((item) => ({
+        siswa_id: item.siswa_id,
+        nama_item: item.nama_item.trim(),
+        periode: monthNames[Number(item.bulan)] || `${item.bulan}/${item.tahun}`,
+        qty: Number(item.qty),
+        harga_satuan: Number(item.harga_satuan),
+        bulan: Number(item.bulan),
+        tahun: Number(item.tahun),
+      }))
+
+      /*
+       * Buka tab langsung dari klik user.
+       * Ini penting untuk Safari karena popup/download bisa diblokir
+       * jika baru dibuka setelah RPC/network await selesai.
+       */
+      const downloadWindow = window.open('', '_blank')
+
+      if (!downloadWindow) {
+        fail(
+          'Browser memblokir tab download. Izinkan pop-up untuk localhost, lalu coba lagi.'
+        )
+        return
+      }
+
+      downloadWindow.document.open()
+      downloadWindow.document.write(`
+        <!doctype html>
+        <html lang="id">
+          <head>
+            <meta charset="utf-8" />
+            <meta
+              name="viewport"
+              content="width=device-width,initial-scale=1"
+            />
+            <title>Membuat Faktur...</title>
+          </head>
+          <body
+            style="
+              font-family: Arial, sans-serif;
+              padding: 40px;
+              background: #F8FAF7;
+              color: #063D27;
+            "
+          >
+            <h2>Sedang membuat faktur CBS...</h2>
+            <p>Mohon tunggu sebentar.</p>
+          </body>
+        </html>
+      `)
+      downloadWindow.document.close()
+
+      console.log('RPC ITEMS:', rpcItems)
+
+      const { data: invoiceId, error } = await supabase.rpc('create_family_invoice', {
+        p_ortu_id: invoiceParentId,
+        p_tagih_kepada: tagihKepada,
+        p_tanggal_invoice: familyTanggalInvoice,
+        p_tanggal_jatuh_tempo: familyJatuhTempo,
+        p_diskon: familyDiscountNumber,
+        p_catatan: familyCatatan.trim() || null,
+        p_items: rpcItems,
+      })
+
+      console.log('CREATE FAMILY INVOICE RESULT:', {
+        invoiceId,
+        error,
+      })
+
+      if (error) {
+        if (!downloadWindow.closed) {
+          downloadWindow.close()
+        }
+
+        fail(`Gagal membuat faktur: ${error.message}`)
+        return
+      }
+
+      if (!invoiceId) {
+        if (!downloadWindow.closed) {
+          downloadWindow.close()
+        }
+
+        fail('Faktur berhasil diproses tetapi ID faktur tidak dikembalikan.')
+        return
+      }
+
+      setFamilyMessage('Faktur berhasil dibuat. Sedang menyiapkan PDF...')
+
+      console.log('FAMILY INVOICE ID:', invoiceId)
+
+      await handleDownloadFamilyInvoice(String(invoiceId), downloadWindow)
+
+      const firstStudentId = familyItems[0]?.siswa_id || ''
+
+      resetFamilyInvoiceForm()
+
+      if (firstStudentId) {
+        setFilterSiswaId(firstStudentId)
+      }
+
+      await loadData()
+    } catch (error) {
+      console.error('CREATE FAMILY INVOICE EXCEPTION:', error)
+
+      fail(
+        error instanceof Error
+          ? error.message
+          : 'Terjadi kesalahan saat membuat faktur.'
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
+
+  async function handleGenerateMonthlyBills() {
+    const selectedMonth = Number(bulan)
+    const selectedYear = Number(tahun)
+
+    const confirmGenerate = window.confirm(
+      `Generate tagihan baru ${monthNames[selectedMonth]} ${selectedYear} untuk ${getJenisKelasFilterLabel(invoiceJenisKelas).toUpperCase()}? Tagihan lama di bulan yang sama tidak akan dihapus.`
+    )
+
+    if (!confirmGenerate) return
+
     setSaving(true)
     setMessage('')
 
     const userId = await getCurrentUserId()
 
-    if (!selectedSiswaId || !bulan || !tahun || !nominal) {
-      setMessage('Lengkapi data invoice terlebih dahulu.')
+    if (!selectedMonth || !selectedYear || !nominal) {
+      setMessage('Isi bulan, tahun, dan nominal terlebih dahulu.')
+      setSaving(false)
+      return
+    }
+
+    if (siswaByInvoiceType.length === 0) {
+      setMessage(`Belum ada siswa aktif pada ${getJenisKelasFilterLabel(invoiceJenisKelas)}.`)
+      setSaving(false)
+      return
+    }
+
+    const billNominal = Number(nominal)
+
+    if (!billNominal || billNominal <= 0) {
+      setMessage('Nominal tagihan harus lebih dari 0.')
       setSaving(false)
       return
     }
@@ -304,19 +955,23 @@ export default function AdminDanaPage() {
     const dueDate = new Date(today)
     dueDate.setDate(today.getDate() + 21)
 
-    const { error } = await supabase.from('spp').insert({
-      siswa_id: selectedSiswaId,
-      bulan: Number(bulan),
-      tahun: Number(tahun),
-      nominal: Number(nominal),
+    const payload = siswaByInvoiceType.map((siswa, index) => ({
+      siswa_id: siswa.id,
+      bulan: selectedMonth,
+      tahun: selectedYear,
+      nominal: billNominal,
       dibayar: 0,
-      status: 'belum',
+      status: 'belum' as SppStatus,
       tanggal_bayar: null,
       tanggal_jatuh_tempo: dueDate.toISOString().slice(0, 10),
-      keterangan: keterangan || 'Tagihan dibuat oleh admin',
-      invoice_no: generateInvoiceNo(),
+      keterangan:
+        keterangan ||
+        `Tagihan ${normalizeJenisKelas(siswa.jenis_kelas)} ${monthNames[selectedMonth]} ${selectedYear} dibuat otomatis`,
+      invoice_no: generateInvoiceNo(index),
       updated_by: userId,
-    })
+    }))
+
+    const { error } = await supabase.from('spp').insert(payload)
 
     if (error) {
       setMessage(error.message)
@@ -324,11 +979,11 @@ export default function AdminDanaPage() {
       return
     }
 
-    setFilterSiswaId(selectedSiswaId)
-    setSelectedSiswaId('')
-    setNominal('500000')
-    setKeterangan('')
-    setMessage('Invoice berhasil dibuat.')
+    setFilterSiswaId('')
+    setSearch('')
+    setMessage(
+      `Berhasil generate ${payload.length} tagihan ${getJenisKelasFilterLabel(invoiceJenisKelas)} untuk ${monthNames[selectedMonth]} ${selectedYear}. Tagihan lama tetap aman.`
+    )
     setSaving(false)
     loadData()
   }
@@ -381,7 +1036,7 @@ export default function AdminDanaPage() {
       sub_kategori: isPaidOff ? 'Pelunasan SPP' : 'Cicilan SPP',
       nominal: amount,
       tanggal: today,
-      deskripsi: `${isPaidOff ? 'Pelunasan' : 'Cicilan'} cash SPP ${
+      deskripsi: `${isPaidOff ? 'Pelunasan' : 'Cicilan'} cash ${spp.keterangan || 'tagihan'} ${
         spp.siswa?.nama ?? ''
       } - ${monthNames[spp.bulan]} ${spp.tahun}`,
       siswa_id: spp.siswa_id,
@@ -427,7 +1082,7 @@ export default function AdminDanaPage() {
         dibayar: 0,
         tanggal_bayar: null,
         updated_by: userId,
-        keterangan: 'Pembayaran/cicilan direset oleh admin',
+        keterangan: spp.keterangan || 'Pembayaran/cicilan direset oleh admin',
       })
       .eq('id', spp.id)
 
@@ -479,6 +1134,17 @@ export default function AdminDanaPage() {
 
     if (deleteTrxError) {
       setMessage(`Gagal hapus transaksi pembayaran SPP: ${deleteTrxError.message}`)
+      setSaving(false)
+      return
+    }
+
+    const { error: deleteFamilyInvoiceError } = await supabase
+      .from('family_invoices')
+      .delete()
+      .neq('id', '00000000-0000-0000-0000-000000000000')
+
+    if (deleteFamilyInvoiceError) {
+      setMessage(`Gagal hapus faktur keluarga: ${deleteFamilyInvoiceError.message}`)
       setSaving(false)
       return
     }
@@ -631,7 +1297,444 @@ export default function AdminDanaPage() {
     loadData()
   }
 
+  async function handleDownloadFamilyInvoice(
+    familyInvoiceId: string,
+    downloadWindow?: Window | null
+  ) {
+    setSaving(true)
+    setMessage('Sedang membuat faktur keluarga...')
+
+    try {
+      const { data, error } = await supabase
+        .from('family_invoices')
+        .select(
+          `
+          id,
+          invoice_no,
+          ortu_id,
+          tagih_kepada,
+          tanggal_invoice,
+          tanggal_jatuh_tempo,
+          subtotal,
+          diskon,
+          total,
+          catatan,
+          created_at,
+          items:family_invoice_items (
+            id,
+            siswa_id,
+            spp_id,
+            nama_item,
+            periode,
+            qty,
+            harga_satuan,
+            gross_total,
+            discount_allocated,
+            net_total,
+            urutan,
+            siswa:siswa_id (
+              id,
+              nama,
+              kelas,
+              jenis_kelas,
+              sekolah,
+              ortu_id,
+              nama_ortu
+            ),
+            spp:spp_id (
+              id,
+              dibayar,
+              status,
+              tanggal_bayar
+            )
+          )
+        `
+        )
+        .eq('id', familyInvoiceId)
+        .single()
+
+      if (error) {
+        throw error
+      }
+
+      const invoice = data as unknown as FamilyInvoiceRow
+      const items = [...(invoice.items || [])].sort((a, b) => a.urutan - b.urutan)
+
+      if (items.length === 0) {
+        throw new Error('Item faktur tidak ditemukan.')
+      }
+
+      const totalDibayar = items.reduce(
+        (total, item) => total + Number(item.spp?.dibayar || 0),
+        0
+      )
+      const saldoTerutang = Math.max(Number(invoice.total || 0) - totalDibayar, 0)
+
+      const jsPdfModule = await import('jspdf')
+      const { jsPDF } = jsPdfModule
+      const pdf = new jsPDF('p', 'mm', 'a4')
+
+      // Logo CBS:
+      // File fisik:
+      // public/images/logo bimbel.jpg
+      //
+      // URL dari browser:
+      // /images/logo%20bimbel.jpg
+      let logoData: string | null = null
+      let signatureData: string | null = null
+
+      try {
+        logoData = await loadPublicImageAsDataUrl(
+          '/images/logo%20bimbel.jpg'
+        )
+      } catch (logoError) {
+        console.error('Gagal memuat logo invoice:', logoError)
+        logoData = null
+      }
+
+      try {
+        signatureData = await loadPublicImageAsDataUrl('/cbs-signature.png')
+      } catch {
+        signatureData = null
+      }
+
+      const pageWidth = pdf.internal.pageSize.getWidth()
+      const left = 15
+      const right = pageWidth - 15
+
+      const drawCompanyHeader = () => {
+        if (logoData) {
+          pdf.addImage(
+            logoData,
+            'JPEG',
+            left,
+            10,
+            30,
+            30
+          )
+        }
+
+        const companyX = logoData ? 50 : left
+
+        pdf.setTextColor(30, 30, 30)
+        pdf.setFont('helvetica', 'bold')
+        pdf.setFontSize(17)
+        pdf.text('Bimbingan Belajar CBS', companyX, 17)
+        pdf.text('Salaman', companyX, 24)
+
+        pdf.setFont('helvetica', 'normal')
+        pdf.setFontSize(8.5)
+        pdf.text('Jl. Diponegoro No. 28 Gadean Salaman', companyX, 31)
+        pdf.text('Magelang', companyX, 36)
+        pdf.text('0813-9219-2401', companyX, 41)
+        pdf.text('bimbinganbelajarbcssalaman@gmail.com', companyX, 46)
+
+        pdf.setTextColor(18, 103, 43)
+        pdf.setFont('helvetica', 'bold')
+        pdf.setFontSize(25)
+        pdf.text('FAKTUR', right, 18, { align: 'right' })
+
+        pdf.setTextColor(50, 50, 50)
+        pdf.setFontSize(10)
+        pdf.text(`#${invoice.invoice_no}`, right, 27, { align: 'right' })
+
+        pdf.setFont('helvetica', 'normal')
+        pdf.setFontSize(9)
+        pdf.text(`Tanggal: ${formatDate(invoice.tanggal_invoice)}`, right, 35, { align: 'right' })
+        pdf.text(
+          `Tanggal Jatuh Tempo ${formatDate(invoice.tanggal_jatuh_tempo)}`,
+          right,
+          41,
+          { align: 'right' }
+        )
+      }
+
+      const drawTableHeader = (y: number) => {
+        pdf.setFillColor(22, 101, 37)
+        pdf.rect(left, y, right - left, 10, 'F')
+
+        pdf.setTextColor(255, 255, 255)
+        pdf.setFont('helvetica', 'bold')
+        pdf.setFontSize(9)
+        pdf.text('#', 18, y + 6.5)
+        pdf.text('Item', 30, y + 6.5)
+        pdf.text('Kuantitas', 105, y + 6.5)
+        pdf.text('Biaya satuan', 145, y + 6.5, { align: 'right' })
+        pdf.text('Total', right, y + 6.5, { align: 'right' })
+      }
+
+      drawCompanyHeader()
+
+      pdf.setTextColor(40, 40, 40)
+      pdf.setFont('helvetica', 'bold')
+      pdf.setFontSize(11)
+      pdf.text(`Tagih Kepada: ${invoice.tagih_kepada}`, left, 58)
+
+      let tableY = 66
+      drawTableHeader(tableY)
+      let rowY = tableY + 16
+
+      items.forEach((item, index) => {
+        if (rowY > 190) {
+          pdf.addPage()
+          tableY = 18
+          drawTableHeader(tableY)
+          rowY = tableY + 16
+        }
+
+        const studentName = item.siswa?.nama || '-'
+        const periodLabel = item.periode || '-'
+        const detailLabel = `${studentName} • ${periodLabel}`
+
+        pdf.setTextColor(45, 45, 45)
+        pdf.setFont('helvetica', 'normal')
+        pdf.setFontSize(9)
+        pdf.text(String(index + 1), 18, rowY)
+        pdf.setFont('helvetica', 'bold')
+        pdf.text(item.nama_item.slice(0, 45), 30, rowY)
+
+        pdf.setFont('helvetica', 'normal')
+        pdf.setTextColor(105, 105, 105)
+        pdf.setFontSize(8)
+        pdf.text(detailLabel.slice(0, 52), 30, rowY + 5)
+
+        pdf.setTextColor(45, 45, 45)
+        pdf.setFontSize(9)
+        pdf.text(String(Number(item.qty || 0)), 112, rowY, { align: 'center' })
+        pdf.text(formatInvoiceCurrency(Number(item.harga_satuan || 0)), 145, rowY, {
+          align: 'right',
+        })
+        pdf.text(formatInvoiceCurrency(Number(item.gross_total || 0)), right, rowY, {
+          align: 'right',
+        })
+
+        pdf.setDrawColor(228, 228, 228)
+        pdf.line(left, rowY + 9, right, rowY + 9)
+
+        rowY += 15
+      })
+
+      // Jika daftar item sangat panjang, sisakan halaman baru untuk ringkasan.
+      if (rowY > 205) {
+        pdf.addPage()
+        rowY = 25
+      } else {
+        rowY += 8
+      }
+
+      const summaryY = Math.max(rowY, 130)
+
+      // Info pembayaran kiri.
+      pdf.setTextColor(45, 45, 45)
+      pdf.setFont('helvetica', 'bold')
+      pdf.setFontSize(10)
+      pdf.text('Info Pembayaran', left, summaryY)
+
+      pdf.setFont('helvetica', 'normal')
+      pdf.setFontSize(9)
+      pdf.text('Bayar cash ke admin atau transfer ke', left, summaryY + 9)
+      pdf.text('DWI RIYANA NURSANTI', left, summaryY + 16)
+      pdf.text('BRI  308301063510534', left, summaryY + 23)
+      pdf.text('BRI  676701016062537', left, summaryY + 30)
+      pdf.text('Bank Jateng  2162047852', left, summaryY + 37)
+      pdf.text('Bank Mandiri  1850004717119', left, summaryY + 44)
+
+      // Ringkasan kanan.
+      const labelX = 120
+      const amountX = right
+
+      pdf.setFont('helvetica', 'bold')
+      pdf.text('Subtotal', labelX, summaryY)
+      pdf.text(formatInvoiceCurrency(Number(invoice.subtotal || 0)), amountX, summaryY, {
+        align: 'right',
+      })
+
+      pdf.setFont('helvetica', 'normal')
+      pdf.text('Diskon', labelX, summaryY + 10)
+      pdf.text(
+        `-${formatInvoiceCurrency(Number(invoice.diskon || 0))}`,
+        amountX,
+        summaryY + 10,
+        { align: 'right' }
+      )
+
+      pdf.setDrawColor(170, 170, 170)
+      pdf.line(labelX, summaryY + 15, amountX, summaryY + 15)
+
+      pdf.setFont('helvetica', 'bold')
+      pdf.setFontSize(10)
+      pdf.text('Total', labelX, summaryY + 25)
+      pdf.text(formatInvoiceCurrency(Number(invoice.total || 0)), amountX, summaryY + 25, {
+        align: 'right',
+      })
+
+      pdf.setFont('helvetica', 'normal')
+      pdf.text('Dibayar', labelX, summaryY + 35)
+      pdf.text(formatInvoiceCurrency(totalDibayar), amountX, summaryY + 35, {
+        align: 'right',
+      })
+
+      pdf.setFont('helvetica', 'bold')
+      pdf.text('Saldo Terutang', labelX, summaryY + 45)
+      pdf.setTextColor(18, 103, 43)
+      pdf.text(formatInvoiceCurrency(saldoTerutang), amountX, summaryY + 45, {
+        align: 'right',
+      })
+
+      // Tanda tangan.
+      const signatureY = Math.min(summaryY + 76, 250)
+
+      if (signatureData) {
+        pdf.addImage(signatureData, 'PNG', 153, signatureY - 17, 22, 17)
+      } else {
+        pdf.setDrawColor(100, 100, 100)
+        pdf.line(154, signatureY, 176, signatureY - 14)
+        pdf.line(161, signatureY - 2, 173, signatureY - 17)
+      }
+
+      pdf.setTextColor(45, 45, 45)
+      pdf.setFont('helvetica', 'bold')
+      pdf.setFontSize(9)
+      pdf.text('Bimbingan Belajar CBS Salaman', right, signatureY + 9, {
+        align: 'right',
+      })
+
+      pdf.setFont('helvetica', 'normal')
+      pdf.text(formatDate(getLocalDateInputValue()), right, signatureY + 16, {
+        align: 'right',
+      })
+
+      const fileName = `invoice-${safeFileName(invoice.invoice_no)}.pdf`
+      const pdfBlob = pdf.output('blob')
+      const pdfUrl = window.URL.createObjectURL(pdfBlob)
+
+      if (downloadWindow && !downloadWindow.closed) {
+        /*
+         * Safari dapat memblokir download yang baru dimulai setelah banyak await.
+         * Karena tab ini sudah dibuka langsung saat user menekan tombol,
+         * kita taruh link download di sana dan mencoba klik otomatis.
+         * Kalau Safari tetap menahan auto-download, user tinggal klik link
+         * "Download Faktur" yang tetap terlihat di tab tersebut.
+         */
+        downloadWindow.document.open()
+        downloadWindow.document.write(`
+          <!doctype html>
+          <html lang="id">
+            <head>
+              <meta charset="utf-8" />
+              <meta name="viewport" content="width=device-width,initial-scale=1" />
+              <title>${invoice.invoice_no}</title>
+              <style>
+                body {
+                  margin: 0;
+                  min-height: 100vh;
+                  display: grid;
+                  place-items: center;
+                  font-family: Arial, sans-serif;
+                  background: #F8FAF7;
+                  color: #063D27;
+                }
+                .card {
+                  width: min(520px, calc(100vw - 40px));
+                  background: white;
+                  border: 1px solid #DDE9DB;
+                  border-radius: 28px;
+                  padding: 28px;
+                  box-sizing: border-box;
+                  text-align: center;
+                }
+                h1 { margin: 0 0 8px; font-size: 22px; }
+                p { color: #52645A; line-height: 1.6; }
+                a {
+                  display: inline-block;
+                  margin-top: 14px;
+                  padding: 13px 22px;
+                  border-radius: 999px;
+                  background: #063D27;
+                  color: white;
+                  font-weight: 800;
+                  text-decoration: none;
+                }
+              </style>
+            </head>
+            <body>
+              <div class="card">
+                <h1>Faktur ${invoice.invoice_no} siap</h1>
+                <p>Jika unduhan tidak mulai otomatis, tekan tombol di bawah.</p>
+                <a id="download-faktur" href="${pdfUrl}" download="${fileName}">
+                  Download Faktur
+                </a>
+              </div>
+              <script>
+                setTimeout(function () {
+                  var link = document.getElementById('download-faktur');
+                  if (link) link.click();
+                }, 150);
+              </script>
+            </body>
+          </html>
+        `)
+        downloadWindow.document.close()
+      } else {
+        const link = document.createElement('a')
+        link.href = pdfUrl
+        link.download = fileName
+        link.style.display = 'none'
+
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+      }
+
+      // Jangan revoke terlalu cepat karena Safari mungkin masih memakai Blob URL.
+      window.setTimeout(() => {
+        window.URL.revokeObjectURL(pdfUrl)
+      }, 120_000)
+
+      setMessage(
+        `Faktur ${invoice.invoice_no} berhasil dibuat. Jika download tidak otomatis, klik "Download Faktur" pada tab yang terbuka.`
+      )
+    } catch (error) {
+      console.error(error)
+      setMessage(
+        error instanceof Error
+          ? `Gagal download faktur keluarga: ${error.message}`
+          : 'Gagal download faktur keluarga.'
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function handleDownloadInvoice(spp: SppRow) {
+    if (spp.family_invoice_id) {
+      const downloadWindow = window.open('', '_blank')
+
+      if (downloadWindow) {
+        downloadWindow.document.write(`
+          <!doctype html>
+          <html lang="id">
+            <head>
+              <meta charset="utf-8" />
+              <meta name="viewport" content="width=device-width,initial-scale=1" />
+              <title>Membuat Faktur...</title>
+            </head>
+            <body style="font-family:Arial,sans-serif;padding:32px;color:#063D27">
+              <strong>Sedang membuat faktur CBS...</strong>
+              <p style="color:#52645A">Mohon tunggu sebentar.</p>
+            </body>
+          </html>
+        `)
+        downloadWindow.document.close()
+      }
+
+      await handleDownloadFamilyInvoice(
+        spp.family_invoice_id,
+        downloadWindow
+      )
+      return
+    }
+
     setSaving(true)
     setMessage('Sedang membuat invoice...')
 
@@ -640,16 +1743,52 @@ export default function AdminDanaPage() {
       const { jsPDF } = jsPdfModule
       const pdf = new jsPDF('p', 'mm', 'a4')
 
+      let logoData: string | null = null
+
+      try {
+        logoData = await loadPublicImageAsDataUrl(
+          '/images/logo%20bimbel.jpg'
+        )
+      } catch (logoError) {
+        console.error('Gagal memuat logo invoice:', logoError)
+        logoData = null
+      }
+
       const sisa = Math.max(Number(spp.nominal) - Number(spp.dibayar || 0), 0)
+      const itemName = spp.keterangan || `SPP Bimbel ${monthNames[spp.bulan]} ${spp.tahun}`
+
+      if (logoData) {
+        pdf.addImage(
+          logoData,
+          'JPEG',
+          16,
+          10,
+          30,
+          30
+        )
+      }
+
+      const companyX = logoData ? 51 : 16
 
       pdf.setFont('helvetica', 'bold')
-      pdf.setFontSize(22)
-      pdf.text('Bimbingan Belajar CBS Salaman', 16, 22)
+      pdf.setFontSize(17)
+      pdf.text('Bimbingan Belajar CBS', companyX, 18)
+      pdf.text('Salaman', companyX, 25)
 
       pdf.setFont('helvetica', 'normal')
-      pdf.setFontSize(10)
-      pdf.text('Jl. Diponegoro No. 28 Gadean Salaman, Magelang', 16, 30)
-      pdf.text('0813-9219-2401 | bimbinganbelajarbcssalaman@gmail.com', 16, 36)
+      pdf.setFontSize(8.5)
+      pdf.text(
+        'Jl. Diponegoro No. 28 Gadean Salaman',
+        companyX,
+        31
+      )
+      pdf.text('Magelang', companyX, 36)
+      pdf.text('0813-9219-2401', companyX, 41)
+      pdf.text(
+        'bimbinganbelajarbcssalaman@gmail.com',
+        companyX,
+        46
+      )
 
       pdf.setFont('helvetica', 'bold')
       pdf.setFontSize(28)
@@ -665,6 +1804,9 @@ export default function AdminDanaPage() {
       pdf.setFont('helvetica', 'bold')
       pdf.setFontSize(12)
       pdf.text(`Tagih Kepada: ${spp.siswa?.nama || '-'}`, 16, 62)
+      pdf.setFont('helvetica', 'normal')
+      pdf.setFontSize(10)
+      pdf.text(`Kelas: ${spp.siswa?.kelas || '-'} | Jenis: ${normalizeJenisKelas(spp.siswa?.jenis_kelas)}`, 16, 69)
 
       pdf.setFillColor(6, 61, 39)
       pdf.rect(16, 78, 178, 10, 'F')
@@ -680,7 +1822,7 @@ export default function AdminDanaPage() {
       pdf.setTextColor(51, 65, 85)
       pdf.setFont('helvetica', 'normal')
       pdf.text('1', 20, 100)
-      pdf.text(`SPP Bimbel ${monthNames[spp.bulan]} ${spp.tahun}`, 32, 100)
+      pdf.text(itemName.slice(0, 48), 32, 100)
       pdf.text('1', 118, 100)
       pdf.text(formatCurrency(spp.nominal), 136, 100)
       pdf.text(formatCurrency(spp.nominal), 170, 100)
@@ -724,6 +1866,315 @@ export default function AdminDanaPage() {
     } catch (error) {
       console.error(error)
       setMessage(error instanceof Error ? `Gagal download invoice: ${error.message}` : 'Gagal download invoice.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+
+  async function handleDownloadSppReport() {
+    const selectedMonth = Number(reportBulan)
+    const selectedYear = Number(reportTahun)
+
+    if (!selectedMonth || selectedMonth < 1 || selectedMonth > 12) {
+      setMessage('Pilih bulan laporan SPP yang valid.')
+      return
+    }
+
+    if (!selectedYear || selectedYear < 2000 || selectedYear > 2100) {
+      setMessage('Isi tahun laporan SPP yang valid.')
+      return
+    }
+
+    if (filteredMonthlySppRows.length === 0) {
+      setMessage(
+        `Tidak ada data SPP ${getSppReportFilterLabel(reportStatus).toLowerCase()} untuk ${
+          monthNames[selectedMonth]
+        } ${selectedYear}.`
+      )
+      return
+    }
+
+    setSaving(true)
+    setMessage('Sedang membuat rekap SPP Excel...')
+
+    try {
+      const ExcelJS = await import('exceljs')
+      const workbook = new ExcelJS.Workbook()
+      const sheet = workbook.addWorksheet('Rekap SPP', {
+        views: [{ state: 'frozen', ySplit: 7 }],
+        pageSetup: {
+          orientation: 'landscape',
+          fitToPage: true,
+          fitToWidth: 1,
+          fitToHeight: 0,
+          paperSize: 9,
+        },
+      })
+
+      sheet.properties.defaultRowHeight = 21
+      sheet.columns = [
+        { key: 'nomor', width: 7 },
+        { key: 'nama', width: 27 },
+        { key: 'kelas', width: 12 },
+        { key: 'jenis_kelas', width: 15 },
+        { key: 'sekolah', width: 28 },
+        { key: 'jumlah_invoice', width: 15 },
+        { key: 'invoice', width: 32 },
+        { key: 'tagihan', width: 18 },
+        { key: 'dibayar', width: 18 },
+        { key: 'sisa', width: 18 },
+        { key: 'status', width: 17 },
+        { key: 'tanggal_bayar', width: 22 },
+        { key: 'keterangan', width: 42 },
+      ]
+
+      sheet.mergeCells('A1:M1')
+      const titleCell = sheet.getCell('A1')
+      titleCell.value = 'BIMBINGAN BELAJAR CBS SALAMAN'
+      titleCell.font = { bold: true, size: 17, color: { argb: 'FFFFFFFF' } }
+      titleCell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF063D27' },
+      }
+      titleCell.alignment = { horizontal: 'center', vertical: 'middle' }
+      sheet.getRow(1).height = 28
+
+      sheet.mergeCells('A2:M2')
+      const subtitleCell = sheet.getCell('A2')
+      subtitleCell.value = `Rekap Status SPP ${monthNames[selectedMonth]} ${selectedYear} • ${getJenisKelasFilterLabel(reportJenisKelas)} • ${getSppReportFilterLabel(
+        reportStatus
+      )}`
+      subtitleCell.font = { bold: true, size: 12, color: { argb: 'FF334155' } }
+      subtitleCell.alignment = { horizontal: 'center', vertical: 'middle' }
+      sheet.getRow(2).height = 24
+
+      const filteredSummary = filteredMonthlySppRows.reduce(
+        (summary, row) => {
+          summary.tagihan += row.nominal
+          summary.dibayar += row.dibayar
+          summary.tunggakan += row.sisa
+          return summary
+        },
+        { tagihan: 0, dibayar: 0, tunggakan: 0 }
+      )
+
+      const summaryItems = [
+        ['A4', 'B4', 'TOTAL SISWA', filteredMonthlySppRows.length, 'FFF3F8F1', 'FF063D27', false],
+        ['C4', 'D4', 'LUNAS', monthlySppSummary.lunas, 'FFE6F4EA', 'FF137333', false],
+        ['E4', 'F4', 'CICILAN', monthlySppSummary.cicilan, 'FFFFF4D6', 'FFB06000', false],
+        ['G4', 'H4', 'BELUM BAYAR', monthlySppSummary.belum, 'FFFCE8E6', 'FFC5221F', false],
+        ['I4', 'J4', 'SUDAH DIBAYAR', filteredSummary.dibayar, 'FFE6F4EA', 'FF137333', true],
+        ['K4', 'L4', 'SISA TUNGGAKAN', filteredSummary.tunggakan, 'FFFCE8E6', 'FFC5221F', true],
+      ] as const
+
+      summaryItems.forEach(([labelKey, valueKey, label, value, background, color, currency]) => {
+        const labelCell = sheet.getCell(labelKey)
+        const valueCell = sheet.getCell(valueKey)
+
+        labelCell.value = label
+        valueCell.value = Number(value || 0)
+
+        if (currency) {
+          valueCell.numFmt = '"Rp"#,##0'
+        }
+
+        ;[labelCell, valueCell].forEach((cell) => {
+          cell.font = { bold: true, color: { argb: color } }
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: background },
+          }
+          cell.alignment = { horizontal: 'center', vertical: 'middle' }
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          }
+        })
+      })
+
+      const headerRow = sheet.getRow(7)
+      headerRow.values = [
+        'No.',
+        'Nama Siswa',
+        'Kelas',
+        'Jenis Kelas',
+        'Sekolah',
+        'Jumlah Invoice',
+        'Nomor Invoice',
+        'Total Tagihan',
+        'Sudah Dibayar',
+        'Sisa Tunggakan',
+        'Status',
+        'Bayar Terakhir',
+        'Keterangan',
+      ]
+      headerRow.height = 28
+
+      headerRow.eachCell((cell) => {
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' } }
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF063D27' },
+        }
+        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFCAD5CC' } },
+          bottom: { style: 'thin', color: { argb: 'FFCAD5CC' } },
+          left: { style: 'thin', color: { argb: 'FFCAD5CC' } },
+          right: { style: 'thin', color: { argb: 'FFCAD5CC' } },
+        }
+      })
+
+      filteredMonthlySppRows.forEach((item, index) => {
+        const row = sheet.getRow(8 + index)
+        const statusLabel = getSppReportStatusLabel(item.status)
+
+        row.values = [
+          index + 1,
+          item.nama,
+          item.kelas,
+          item.jenisKelas,
+          item.sekolah || '-',
+          item.jumlahInvoice,
+          item.invoiceNumbers.join(', ') || '-',
+          item.nominal,
+          item.dibayar,
+          item.sisa,
+          statusLabel,
+          item.tanggalBayarTerakhir || '-',
+          item.keterangan.join(' | ') || '-',
+        ]
+
+        row.alignment = { vertical: 'top', wrapText: true }
+
+        row.eachCell((cell) => {
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          }
+        })
+
+        row.getCell(1).alignment = { horizontal: 'center', vertical: 'top' }
+        row.getCell(3).alignment = { horizontal: 'center', vertical: 'top' }
+        row.getCell(4).alignment = { horizontal: 'center', vertical: 'top' }
+        row.getCell(6).alignment = { horizontal: 'center', vertical: 'top' }
+
+        row.getCell(8).numFmt = '"Rp"#,##0'
+        row.getCell(9).numFmt = '"Rp"#,##0'
+        row.getCell(10).numFmt = '"Rp"#,##0'
+
+        const statusCell = row.getCell(11)
+        statusCell.font = {
+          bold: true,
+          color: {
+            argb:
+              item.status === 'lunas'
+                ? 'FF137333'
+                : item.status === 'cicilan'
+                  ? 'FFB06000'
+                  : 'FFC5221F',
+          },
+        }
+        statusCell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: {
+            argb:
+              item.status === 'lunas'
+                ? 'FFE6F4EA'
+                : item.status === 'cicilan'
+                  ? 'FFFFF4D6'
+                  : 'FFFCE8E6',
+          },
+        }
+        statusCell.alignment = { horizontal: 'center', vertical: 'top' }
+      })
+
+      const totalRowNumber = 8 + filteredMonthlySppRows.length
+      const totalRow = sheet.getRow(totalRowNumber)
+
+      totalRow.values = [
+        '',
+        'TOTAL',
+        '',
+        '',
+        '',
+        '',
+        '',
+        filteredSummary.tagihan,
+        filteredSummary.dibayar,
+        filteredSummary.tunggakan,
+        '',
+        '',
+        '',
+      ]
+
+      totalRow.getCell(8).numFmt = '"Rp"#,##0'
+      totalRow.getCell(9).numFmt = '"Rp"#,##0'
+      totalRow.getCell(10).numFmt = '"Rp"#,##0'
+
+      totalRow.eachCell((cell) => {
+        cell.font = { bold: true, color: { argb: 'FF063D27' } }
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFFFF2CC' },
+        }
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFCAD5CC' } },
+          bottom: { style: 'thin', color: { argb: 'FFCAD5CC' } },
+          left: { style: 'thin', color: { argb: 'FFCAD5CC' } },
+          right: { style: 'thin', color: { argb: 'FFCAD5CC' } },
+        }
+      })
+
+      sheet.autoFilter = {
+        from: 'A7',
+        to: `M${Math.max(totalRowNumber - 1, 7)}`,
+      }
+
+      sheet.getColumn(8).numFmt = '"Rp"#,##0'
+      sheet.getColumn(9).numFmt = '"Rp"#,##0'
+      sheet.getColumn(10).numFmt = '"Rp"#,##0'
+
+      const buffer = await workbook.xlsx.writeBuffer()
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      })
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      const statusSuffix = safeFileName(getSppReportFilterLabel(reportStatus))
+      const classSuffix = safeFileName(getJenisKelasFilterLabel(reportJenisKelas))
+
+      link.href = url
+      link.download = `rekap-spp-${String(selectedYear)}-${String(selectedMonth).padStart(
+        2,
+        '0'
+      )}-${classSuffix}-${statusSuffix}.xlsx`
+
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+
+      setMessage(
+        `Rekap SPP ${monthNames[selectedMonth]} ${selectedYear} berhasil didownload (${filteredMonthlySppRows.length} siswa).`
+      )
+    } catch (error) {
+      console.error(error)
+      setMessage(
+        error instanceof Error
+          ? `Gagal membuat rekap SPP: ${error.message}`
+          : 'Gagal membuat rekap SPP.'
+      )
     } finally {
       setSaving(false)
     }
@@ -917,18 +2368,13 @@ export default function AdminDanaPage() {
           <section className="rounded-[30px] border border-[#E7EFE6] bg-white p-5 sm:p-6 lg:p-7">
             <div className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
               <div className="rounded-[26px] bg-[#F3F8F1] p-6 sm:p-7">
-                <div className="inline-flex items-center gap-2 rounded-full border border-[#DDE9DB] bg-white px-4 py-2 text-xs font-black text-[#063D27]">
-                  <Sparkles className="h-4 w-4" />
-                  Admin CBS System
-                </div>
-
                 <h1 className="mt-5 text-3xl font-black tracking-tight text-[#063D27] sm:text-4xl lg:text-5xl">
                   Dana & Keuangan
                 </h1>
 
                 <p className="mt-4 max-w-2xl text-sm font-medium leading-7 text-slate-500 sm:text-base">
-                  Kelola invoice, cicilan SPP cash, pemasukan, pengeluaran, gaji tutor,
-                  tunggakan, dan laporan Excel dengan tampilan yang lebih tenang.
+                  Kelola invoice, cicilan SPP cash, jenis kelas Reguler/UTBK/Intensif,
+                  pemasukan, pengeluaran, gaji tutor, tunggakan, dan laporan Excel.
                 </p>
 
                 <div className="mt-6 flex flex-wrap gap-3">
@@ -944,12 +2390,22 @@ export default function AdminDanaPage() {
 
                   <button
                     type="button"
+                    onClick={handleDownloadSppReport}
+                    disabled={saving}
+                    className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-[#063D27] px-5 text-sm font-black text-white transition hover:bg-[#0B5738] disabled:bg-slate-300"
+                  >
+                    <Download className="h-4 w-4" />
+                    Export Rekap SPP
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={handleDownloadExcelReport}
                     disabled={saving}
                     className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-[#8B5CF6] px-5 text-sm font-black text-white transition hover:bg-[#7C3AED] disabled:bg-slate-300"
                   >
                     <FileSpreadsheet className="h-4 w-4" />
-                    Download Excel
+                    Laporan Dana
                   </button>
                 </div>
               </div>
@@ -991,11 +2447,131 @@ export default function AdminDanaPage() {
             <StatusPillCard title="Belum Lunas / Cicilan" value={`${totalBelumLunas} Tagihan`} type="danger" />
           </section>
 
+          <section className="grid gap-3 sm:grid-cols-3">
+            <ClassTypeCard title="Reguler" value={jenisKelasCounts.Reguler} />
+            <ClassTypeCard title="UTBK" value={jenisKelasCounts.UTBK} />
+            <ClassTypeCard title="Intensif" value={jenisKelasCounts.Intensif} />
+          </section>
+
+          <section className="panel-card">
+            <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+              <div>
+                <div className="section-kicker">Export SPP</div>
+                <h2 className="section-title">Rekap Pembayaran SPP Bulanan</h2>
+                <p className="section-desc">
+                  Pilih periode dan status. Sistem menggabungkan semua invoice pada bulan yang sama
+                  per siswa, lalu menghitung total tagihan, pembayaran, dan sisa tunggakan.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleDownloadSppReport}
+                disabled={saving || filteredMonthlySppRows.length === 0}
+                className="excel-button"
+              >
+                <Download className="h-4 w-4" />
+                Export Rekap SPP
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+              <Field label="Bulan Laporan">
+                <select
+                  value={reportBulan}
+                  onChange={(e) => setReportBulan(e.target.value)}
+                  className="input-style"
+                >
+                  {monthNames.slice(1).map((name, index) => (
+                    <option key={name} value={index + 1}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              <Field label="Tahun Laporan">
+                <input
+                  type="number"
+                  min={2000}
+                  max={2100}
+                  value={reportTahun}
+                  onChange={(e) => setReportTahun(e.target.value)}
+                  className="input-style"
+                />
+              </Field>
+
+              <Field label="Jenis Kelas">
+                <select
+                  value={reportJenisKelas}
+                  onChange={(e) => setReportJenisKelas(e.target.value as JenisKelasFilter)}
+                  className="input-style"
+                >
+                  <option value="semua">Semua Jenis Kelas</option>
+                  {jenisKelasOptions.map((jenis) => (
+                    <option key={jenis} value={jenis}>
+                      {jenis}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              <Field label="Status Pembayaran">
+                <select
+                  value={reportStatus}
+                  onChange={(e) => setReportStatus(e.target.value as SppReportFilter)}
+                  className="input-style"
+                >
+                  <option value="semua">Semua Status</option>
+                  <option value="lunas">Lunas</option>
+                  <option value="cicilan">Cicilan</option>
+                  <option value="belum">Belum Bayar</option>
+                  <option value="menunggak">Semua Menunggak</option>
+                </select>
+              </Field>
+
+              <div className="mt-3 rounded-[22px] border border-[#DDE9DB] bg-[#F3F8F1] px-5 py-4">
+                <p className="text-xs font-black uppercase tracking-wide text-slate-500">
+                  Data yang diexport
+                </p>
+                <p className="mt-2 text-2xl font-black text-[#063D27]">
+                  {filteredMonthlySppRows.length} siswa
+                </p>
+                <p className="mt-1 text-xs font-bold text-slate-500">
+                  {getJenisKelasFilterLabel(reportJenisKelas)} · {getSppReportFilterLabel(reportStatus)}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+              <MiniReportStat label="Total Siswa" value={`${monthlySppRowsByClass.length}`} />
+              <MiniReportStat label="Lunas" value={`${monthlySppSummary.lunas}`} tone="success" />
+              <MiniReportStat label="Cicilan" value={`${monthlySppSummary.cicilan}`} tone="warning" />
+              <MiniReportStat label="Belum Bayar" value={`${monthlySppSummary.belum}`} tone="danger" />
+              <MiniReportStat
+                label="Sudah Dibayar"
+                value={formatCurrency(monthlySppSummary.totalDibayar)}
+                tone="success"
+              />
+              <MiniReportStat
+                label="Sisa Tunggakan"
+                value={formatCurrency(monthlySppSummary.totalTunggakan)}
+                tone="danger"
+              />
+            </div>
+
+            {monthlySppRowsByClass.length === 0 && (
+              <div className="mt-4 rounded-[22px] border border-[#F3E8A6] bg-[#FFFDE8] px-5 py-4 text-sm font-bold text-[#7C5A00]">
+                Belum ada tagihan SPP {getJenisKelasFilterLabel(reportJenisKelas).toLowerCase()} untuk {monthNames[Number(reportBulan)]} {reportTahun}.
+                Generate invoice terlebih dahulu agar siswa dapat masuk ke rekap.
+              </div>
+            )}
+          </section>
+
           <section className="grid items-start gap-5 xl:grid-cols-[1.2fr_0.8fr]">
             <div className="panel-card overflow-hidden">
               <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                 <div>
-                  <div className="section-kicker">Tagihan Siswa</div>
                   <h2 className="section-title">Pembayaran & Cicilan Cash</h2>
                   <p className="section-desc">
                     Pilih murid terlebih dahulu. Tagihan disembunyikan secara default agar halaman tetap rapi.
@@ -1013,7 +2589,27 @@ export default function AdminDanaPage() {
                 </button>
               </div>
 
-              <div className="mb-4 grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
+              <div className="mb-4 grid gap-3 lg:grid-cols-[0.65fr_1fr_1fr_auto]">
+                <div className="select-shell">
+                  <select
+                    value={filterJenisKelas}
+                    onChange={(e) => {
+                      setFilterJenisKelas(e.target.value as JenisKelasFilter)
+                      setFilterSiswaId('')
+                      setSearch('')
+                    }}
+                    className="clean-select"
+                  >
+                    <option value="semua">Semua jenis kelas</option>
+                    {jenisKelasOptions.map((jenis) => (
+                      <option key={jenis} value={jenis}>
+                        {jenis}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#063D27]" />
+                </div>
+
                 <div className="select-shell">
                   <select
                     value={filterSiswaId}
@@ -1024,9 +2620,9 @@ export default function AdminDanaPage() {
                     className="clean-select"
                   >
                     <option value="">Pilih murid untuk melihat tagihan</option>
-                    {siswaList.map((siswa) => (
+                    {siswaByPaymentType.map((siswa) => (
                       <option key={siswa.id} value={siswa.id}>
-                        {siswa.nama} - {siswa.kelas}
+                        {siswa.nama} - {siswa.kelas} · {normalizeJenisKelas(siswa.jenis_kelas)}
                       </option>
                     ))}
                   </select>
@@ -1038,7 +2634,7 @@ export default function AdminDanaPage() {
                   <input
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Cari invoice/periode..."
+                    placeholder="Cari invoice/periode/keterangan..."
                     disabled={!filterSiswaId}
                     className="w-full bg-transparent text-sm font-semibold text-slate-700 outline-none placeholder:text-slate-400 disabled:cursor-not-allowed"
                   />
@@ -1047,6 +2643,7 @@ export default function AdminDanaPage() {
                 <button
                   type="button"
                   onClick={() => {
+                    setFilterJenisKelas('semua')
                     setFilterSiswaId('')
                     setSearch('')
                   }}
@@ -1057,23 +2654,49 @@ export default function AdminDanaPage() {
               </div>
 
               {selectedStudent && (
-                <div className="mb-4 rounded-[22px] border border-[#E7EFE6] bg-[#F8FAF7] px-5 py-4">
-                  <p className="text-sm font-black text-[#063D27]">
-                    Murid terpilih: {selectedStudent.nama}
-                  </p>
-                  <p className="mt-1 text-sm font-medium text-slate-500">
-                    Kelas: {selectedStudent.kelas} · Sekolah: {selectedStudent.sekolah || '-'}
-                  </p>
+                <div className="mb-4 flex flex-col gap-4 rounded-[22px] border border-[#E7EFE6] bg-[#F8FAF7] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-black text-[#063D27]">
+                      Murid terpilih: {selectedStudent.nama}
+                    </p>
+                    <p className="mt-1 text-sm font-medium text-slate-500">
+                      Kelas: {selectedStudent.kelas} · Sekolah: {selectedStudent.sekolah || '-'}
+                    </p>
+                  </div>
+
+                  <div className="min-w-[190px]">
+                    <label className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-500">
+                      Jenis Kelas
+                    </label>
+                    <select
+                      value={normalizeJenisKelas(selectedStudent.jenis_kelas)}
+                      onChange={(e) =>
+                        handleUpdateStudentJenisKelas(
+                          selectedStudent.id,
+                          e.target.value as JenisKelas
+                        )
+                      }
+                      disabled={saving}
+                      className="input-style"
+                    >
+                      {jenisKelasOptions.map((jenis) => (
+                        <option key={jenis} value={jenis}>
+                          {jenis}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               )}
 
               <div className="overflow-x-auto rounded-[24px] border border-[#E7EFE6]">
-                <table className="w-full min-w-[1180px] text-left text-sm">
+                <table className="w-full min-w-[1220px] text-left text-sm">
                   <thead>
                     <tr className="bg-[#F3F8F1] text-xs uppercase tracking-wide text-[#063D27]">
                       <th className="px-4 py-4">Invoice</th>
                       <th className="px-4 py-4">Siswa</th>
                       <th className="px-4 py-4">Periode</th>
+                      <th className="px-4 py-4">Keterangan</th>
                       <th className="px-4 py-4">Tagihan</th>
                       <th className="px-4 py-4">Dibayar</th>
                       <th className="px-4 py-4">Sisa</th>
@@ -1085,11 +2708,11 @@ export default function AdminDanaPage() {
 
                   <tbody className="bg-white">
                     {loading ? (
-                      <EmptyRow colSpan={9} title="Loading data..." />
+                      <EmptyRow colSpan={10} title="Loading data..." />
                     ) : !filterSiswaId ? (
-                      <EmptyRow colSpan={9} title="Pilih murid terlebih dahulu" desc="Tagihan siswa disembunyikan secara default." />
+                      <EmptyRow colSpan={10} title="Pilih murid terlebih dahulu" desc="Tagihan siswa disembunyikan secara default." />
                     ) : filteredSpp.length === 0 ? (
-                      <EmptyRow colSpan={9} title="Tagihan murid ini belum ada." />
+                      <EmptyRow colSpan={10} title="Tagihan murid ini belum ada." />
                     ) : (
                       filteredSpp.map((spp) => {
                         const sisa = Math.max(Number(spp.nominal) - Number(spp.dibayar || 0), 0)
@@ -1100,11 +2723,18 @@ export default function AdminDanaPage() {
 
                             <td className="px-4 py-4">
                               <p className="font-black text-slate-800">{spp.siswa?.nama || '-'}</p>
-                              <p className="text-xs font-semibold text-slate-400">{spp.siswa?.kelas || '-'}</p>
+                              <div className="mt-1 flex items-center gap-2">
+                                <p className="text-xs font-semibold text-slate-400">{spp.siswa?.kelas || '-'}</p>
+                                <JenisKelasBadge value={normalizeJenisKelas(spp.siswa?.jenis_kelas)} />
+                              </div>
                             </td>
 
                             <td className="px-4 py-4 font-semibold text-slate-500">
                               {monthNames[spp.bulan]} {spp.tahun}
+                            </td>
+
+                            <td className="px-4 py-4 font-semibold text-slate-500">
+                              {spp.keterangan || '-'}
                             </td>
 
                             <td className="px-4 py-4 font-black text-slate-800">{formatCurrency(spp.nominal)}</td>
@@ -1191,13 +2821,249 @@ export default function AdminDanaPage() {
             </div>
 
             <div className="space-y-5">
-              <FormCard title="Generate Invoice" desc="Membuat tagihan baru di table SPP." icon={<Plus className="h-5 w-5" />} onSubmit={handleGenerateInvoice} buttonText="Generate Invoice" buttonClass="primary-submit">
-                <Field label="Siswa">
-                  <select value={selectedSiswaId} onChange={(e) => setSelectedSiswaId(e.target.value)} className="input-style">
-                    <option value="">Pilih siswa</option>
-                    {siswaList.map((siswa) => (
-                      <option key={siswa.id} value={siswa.id}>
-                        {siswa.nama} - {siswa.kelas}
+              <FormCard
+                title="Faktur Keluarga"
+                desc="Satu faktur dapat berisi beberapa anak dan beberapa item. Setiap item tetap dibuat sebagai tagihan SPP milik anak masing-masing."
+                icon={<ReceiptText className="h-5 w-5" />}
+                onSubmit={handleCreateFamilyInvoice}
+                buttonText={saving ? 'Memproses Faktur...' : 'Buat & Download Faktur'}
+                buttonClass="primary-submit"
+              >
+                <Field label="Tagih Kepada">
+                  <input
+                    value={familyTagihKepada}
+                    onChange={(e) => setFamilyTagihKepada(e.target.value)}
+                    placeholder="Contoh: Ayang dan Ayuun / Nama orang tua"
+                    className="input-style"
+                  />
+                </Field>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Tanggal Faktur">
+                    <input
+                      type="date"
+                      value={familyTanggalInvoice}
+                      onChange={(e) => setFamilyTanggalInvoice(e.target.value)}
+                      className="input-style"
+                    />
+                  </Field>
+
+                  <Field label="Jatuh Tempo">
+                    <input
+                      type="date"
+                      value={familyJatuhTempo}
+                      onChange={(e) => setFamilyJatuhTempo(e.target.value)}
+                      className="input-style"
+                    />
+                  </Field>
+                </div>
+
+                <div className="mt-5 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-black text-[#063D27]">Item Faktur</p>
+                    <p className="mt-1 text-xs font-semibold text-slate-500">
+                      Pilih anak pada setiap item. Anak yang berbeda boleh dimasukkan selama masih satu keluarga.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={addFamilyItem}
+                    className="inline-flex shrink-0 items-center gap-2 rounded-full bg-[#F3F8F1] px-4 py-2 text-xs font-black text-[#063D27] transition hover:bg-[#EAF3E8]"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Tambah Item
+                  </button>
+                </div>
+
+                <div className="mt-3 space-y-3">
+                  {familyItems.map((item, index) => {
+                    const itemTotal = Number(item.qty || 0) * Number(item.harga_satuan || 0)
+
+                    return (
+                      <div
+                        key={item.clientId}
+                        className="rounded-[22px] border border-[#DDE9DB] bg-[#F8FAF7] p-4"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-xs font-black uppercase tracking-wide text-[#0B5738]">
+                              Item {index + 1}
+                            </p>
+                            <p className="mt-1 text-xs font-semibold text-slate-500">
+                              Total item: {formatCurrency(itemTotal)}
+                            </p>
+                          </div>
+
+                          {familyItems.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => removeFamilyItem(item.clientId)}
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-red-50 text-red-600 transition hover:bg-red-100"
+                              aria-label={`Hapus item ${index + 1}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+
+                        <Field label="Anak / Siswa">
+                          <select
+                            value={item.siswa_id}
+                            onChange={(e) => handleFamilyStudentChange(item.clientId, e.target.value)}
+                            className="input-style"
+                          >
+                            <option value="">Pilih anak</option>
+                            {siswaList.map((siswa) => (
+                              <option key={siswa.id} value={siswa.id}>
+                                {siswa.nama} - {siswa.kelas} · {normalizeJenisKelas(siswa.jenis_kelas)}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+
+                        <Field label="Nama Item">
+                          <input
+                            value={item.nama_item}
+                            onChange={(e) =>
+                              updateFamilyItem(item.clientId, 'nama_item', e.target.value)
+                            }
+                            placeholder="Contoh: Paket SD Reguler / Kelebihan SD"
+                            className="input-style"
+                          />
+                        </Field>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <Field label="Bulan / Periode">
+                            <select
+                              value={item.bulan}
+                              onChange={(e) =>
+                                updateFamilyItem(item.clientId, 'bulan', e.target.value)
+                              }
+                              className="input-style"
+                            >
+                              {monthNames.slice(1).map((name, monthIndex) => (
+                                <option key={name} value={monthIndex + 1}>
+                                  {name}
+                                </option>
+                              ))}
+                            </select>
+                          </Field>
+
+                          <Field label="Tahun">
+                            <input
+                              type="number"
+                              min={2000}
+                              max={2100}
+                              value={item.tahun}
+                              onChange={(e) =>
+                                updateFamilyItem(item.clientId, 'tahun', e.target.value)
+                              }
+                              className="input-style"
+                            />
+                          </Field>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <Field label="Kuantitas">
+                            <input
+                              type="number"
+                              min="0.01"
+                              step="0.01"
+                              value={item.qty}
+                              onChange={(e) =>
+                                updateFamilyItem(item.clientId, 'qty', e.target.value)
+                              }
+                              className="input-style"
+                            />
+                          </Field>
+
+                          <Field label="Biaya Satuan">
+                            <input
+                              type="number"
+                              min="0"
+                              value={item.harga_satuan}
+                              onChange={(e) =>
+                                updateFamilyItem(item.clientId, 'harga_satuan', e.target.value)
+                              }
+                              placeholder="200000"
+                              className="input-style"
+                            />
+                          </Field>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                <Field label="Diskon Faktur">
+                  <input
+                    type="number"
+                    min="0"
+                    value={familyDiskon}
+                    onChange={(e) => setFamilyDiskon(e.target.value)}
+                    className="input-style"
+                  />
+                </Field>
+
+                <Field label="Catatan">
+                  <input
+                    value={familyCatatan}
+                    onChange={(e) => setFamilyCatatan(e.target.value)}
+                    placeholder="Opsional"
+                    className="input-style"
+                  />
+                </Field>
+
+                <div className="mt-4 rounded-[22px] border border-[#DDE9DB] bg-[#F3F8F1] p-4">
+                  <div className="flex items-center justify-between text-sm font-semibold text-slate-600">
+                    <span>Subtotal</span>
+                    <span>{formatCurrency(familySubtotal)}</span>
+                  </div>
+
+                  <div className="mt-2 flex items-center justify-between text-sm font-semibold text-slate-600">
+                    <span>Diskon</span>
+                    <span>-{formatCurrency(familyDiscountNumber)}</span>
+                  </div>
+
+                  <div className="mt-3 border-t border-[#DDE9DB] pt-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-black text-[#063D27]">Total Faktur</span>
+                      <span className="text-lg font-black text-[#063D27]">
+                        {formatCurrency(familyTotal)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {familyMessage && (
+                  <div className="mt-4 rounded-[18px] border border-[#F3E8A6] bg-[#FFFDE8] px-4 py-3 text-sm font-bold text-[#7C5A00]">
+                    {familyMessage}
+                  </div>
+                )}
+              </FormCard>
+
+              <FormCard
+                title="Generate Tagihan Massal"
+                desc="Fitur lama tetap tersedia untuk membuat tagihan nominal yang sama ke banyak siswa sekaligus."
+                icon={<Sparkles className="h-5 w-5" />}
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  void handleGenerateMonthlyBills()
+                }}
+                buttonText={`Generate ${getJenisKelasFilterLabel(invoiceJenisKelas)} (${siswaByInvoiceType.length} Siswa)`}
+                buttonClass="primary-submit"
+              >
+                <Field label="Jenis Kelas">
+                  <select
+                    value={invoiceJenisKelas}
+                    onChange={(e) => setInvoiceJenisKelas(e.target.value as JenisKelasFilter)}
+                    className="input-style"
+                  >
+                    <option value="semua">Semua Jenis Kelas</option>
+                    {jenisKelasOptions.map((jenis) => (
+                      <option key={jenis} value={jenis}>
+                        {jenis}
                       </option>
                     ))}
                   </select>
@@ -1205,7 +3071,11 @@ export default function AdminDanaPage() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Bulan">
-                    <select value={bulan} onChange={(e) => setBulan(e.target.value)} className="input-style">
+                    <select
+                      value={bulan}
+                      onChange={(e) => setBulan(e.target.value)}
+                      className="input-style"
+                    >
                       {monthNames.slice(1).map((name, index) => (
                         <option key={name} value={index + 1}>
                           {name}
@@ -1215,18 +3085,37 @@ export default function AdminDanaPage() {
                   </Field>
 
                   <Field label="Tahun">
-                    <input value={tahun} onChange={(e) => setTahun(e.target.value)} className="input-style" />
+                    <input
+                      type="number"
+                      min={2000}
+                      max={2100}
+                      value={tahun}
+                      onChange={(e) => setTahun(e.target.value)}
+                      className="input-style"
+                    />
                   </Field>
                 </div>
 
-                <Field label="Nominal">
-                  <input type="number" value={nominal} onChange={(e) => setNominal(e.target.value)} className="input-style" />
+                <Field label="Nominal per Siswa">
+                  <input
+                    type="number"
+                    min="0"
+                    value={nominal}
+                    onChange={(e) => setNominal(e.target.value)}
+                    className="input-style"
+                  />
                 </Field>
 
-                <Field label="Keterangan">
-                  <input value={keterangan} onChange={(e) => setKeterangan(e.target.value)} placeholder="Opsional, contoh: Paket UTBK" className="input-style" />
+                <Field label="Keterangan / Nama Tagihan">
+                  <input
+                    value={keterangan}
+                    onChange={(e) => setKeterangan(e.target.value)}
+                    placeholder="Contoh: SPP Reguler"
+                    className="input-style"
+                  />
                 </Field>
               </FormCard>
+
 
               <FormCard title="Pemasukan" desc="Tambah pemasukan manual selain pembayaran SPP." icon={<Banknote className="h-5 w-5" />} onSubmit={handleAddIncome} buttonText="Simpan Pemasukan" buttonClass="income-submit">
                 <Field label="Kategori Pemasukan">
@@ -1309,7 +3198,7 @@ export default function AdminDanaPage() {
               <div className="flex flex-wrap gap-2">
                 <button type="button" onClick={handleDownloadExcelReport} disabled={saving} className="excel-button">
                   <FileSpreadsheet className="h-4 w-4" />
-                  Download Excel
+                  Download Laporan Dana
                 </button>
 
                 <button type="button" onClick={handleResetReport} disabled={saving || transaksiList.length === 0} className="danger-button">
@@ -1620,6 +3509,61 @@ function MiniHeroStat({ label, value }: { label: string; value: string }) {
     <div className="rounded-[20px] border border-[#E7EFE6] bg-white p-4">
       <p className="text-xs font-bold text-slate-500">{label}</p>
       <p className="mt-1 text-sm font-black text-[#063D27]">{value}</p>
+    </div>
+  )
+}
+
+function MiniReportStat({
+  label,
+  value,
+  tone = 'default',
+}: {
+  label: string
+  value: string
+  tone?: 'default' | 'success' | 'warning' | 'danger'
+}) {
+  const toneClass = {
+    default: 'border-[#E7EFE6] bg-white text-[#063D27]',
+    success: 'border-emerald-100 bg-emerald-50 text-emerald-700',
+    warning: 'border-amber-100 bg-amber-50 text-amber-700',
+    danger: 'border-red-100 bg-red-50 text-red-700',
+  }[tone]
+
+  return (
+    <div className={`rounded-[22px] border px-4 py-4 ${toneClass}`}>
+      <p className="text-xs font-black uppercase tracking-wide opacity-65">{label}</p>
+      <p className="mt-2 truncate text-lg font-black">{value}</p>
+    </div>
+  )
+}
+
+function JenisKelasBadge({ value }: { value: JenisKelas }) {
+  const className = {
+    Reguler: 'bg-sky-50 text-sky-700 ring-sky-200',
+    UTBK: 'bg-violet-50 text-violet-700 ring-violet-200',
+    Intensif: 'bg-amber-50 text-amber-700 ring-amber-200',
+  }[value]
+
+  return (
+    <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ring-1 ${className}`}>
+      {value}
+    </span>
+  )
+}
+
+function ClassTypeCard({ title, value }: { title: JenisKelas; value: number }) {
+  return (
+    <div className="rounded-[24px] border border-[#E7EFE6] bg-white p-5">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-black text-slate-500">Jenis Kelas</p>
+          <h3 className="mt-2 text-2xl font-black text-[#063D27]">{title}</h3>
+        </div>
+        <div className="text-right">
+          <p className="text-3xl font-black text-[#063D27]">{value}</p>
+          <p className="text-xs font-bold text-slate-400">siswa aktif</p>
+        </div>
+      </div>
     </div>
   )
 }

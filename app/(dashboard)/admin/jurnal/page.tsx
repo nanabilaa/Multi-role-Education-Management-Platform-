@@ -719,8 +719,7 @@ export default async function AdminJurnalPage({ searchParams }: PageProps) {
               </h1>
 
               <p className="mt-3 max-w-2xl text-sm font-medium leading-7 text-slate-500 sm:text-base">
-                Jurnal dibuat ringkas dan tenang. Detail catatan serta progres murid disembunyikan dulu,
-                lalu bisa dibuka saat dibutuhkan.
+                Jurnal dibuat ringkas
               </p>
             </div>
 

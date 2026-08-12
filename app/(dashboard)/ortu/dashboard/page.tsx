@@ -179,107 +179,126 @@ export default async function OrtuDashboardPage() {
   )
 
   return (
-    <main className="min-h-screen bg-[#F8FAF7] px-4 py-5 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-6xl space-y-5">
-        <section className="rounded-[32px] border border-[#E2EBDD] bg-white p-6 sm:p-7">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full bg-[#F3F8F1] px-4 py-2 text-xs font-bold text-[#063D27]">
+    <main className="min-h-screen bg-[#F5F7FA] px-4 py-5 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
+      <div className="mx-auto w-full max-w-6xl space-y-5">
+        <section className="overflow-hidden rounded-3xl border border-[#DDE7E2] bg-[#0B513B] shadow-[0_10px_30px_rgba(15,61,46,0.08)]">
+          <div className="flex min-h-[190px] flex-col justify-between gap-7 p-6 sm:p-8 lg:flex-row lg:items-end">
+            <div className="min-w-0">
+              <div className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-sm font-semibold text-white/90">
                 <Clock3 className="h-4 w-4" />
-                {todayStr}
+                <span className="capitalize">{todayStr}</span>
               </div>
 
-              <h1 className="mt-5 max-w-2xl text-3xl font-black tracking-tight text-[#063D27] sm:text-4xl">
-                Selamat {greeting}, {data.profile?.full_name ?? 'Orang Tua'}.
+              <h1 className="mt-5 text-2xl font-bold tracking-tight text-white sm:text-3xl lg:text-[34px]">
+                Selamat {greeting}, {data.profile?.full_name ?? 'Orang Tua'}
               </h1>
 
-              <p className="mt-3 max-w-2xl text-sm font-medium leading-7 text-slate-500">
-                Ringkasan belajar anak hari ini. Dibuat sederhana supaya mudah dipantau tanpa terlalu banyak informasi.
+              <p className="mt-2 text-sm font-medium text-white/70 sm:text-base">
+                Jadwal, tagihan, dan catatan belajar terbaru.
               </p>
             </div>
 
-            <div className="rounded-[26px] bg-[#063D27] p-5 text-white lg:w-[280px]">
-              <p className="text-xs font-bold uppercase tracking-[0.16em] text-white/55">
-                Tagihan {bulanIni}
-              </p>
-
-              <p className="mt-3 text-2xl font-black">
-                {formatRupiah(totalTagihan)}
-              </p>
-
-              <p className="mt-2 text-sm font-semibold text-white/65">
-                {sppLunas} lunas · {sppBelum} belum
-              </p>
+            <div className="grid w-full grid-cols-3 gap-2 lg:w-auto lg:min-w-[360px]">
+              <HeaderStat
+                label="Anak"
+                value={`${totalAnak}`}
+              />
+              <HeaderStat
+                label="Jadwal"
+                value={`${data.jadwalTerdekat.length}`}
+              />
+              <HeaderStat
+                label="Belum lunas"
+                value={`${sppBelum}`}
+              />
             </div>
           </div>
         </section>
 
         {data.anakList.length === 0 && (
-          <section className="rounded-[28px] border border-[#EFE6BF] bg-[#FFFBEA] p-5">
-            <p className="text-sm font-semibold leading-7 text-[#7A5C00]">
-              Belum ada anak yang terhubung ke akun ini. Hubungi admin agar data anak bisa muncul di portal orang tua.
-            </p>
+          <section className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:p-5">
+            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+              <GraduationCap className="h-5 w-5" />
+            </div>
+
+            <div>
+              <p className="font-bold text-amber-900">Data anak belum tersedia</p>
+              <p className="mt-1 text-sm font-medium leading-6 text-amber-800/80">
+                Hubungi admin untuk menghubungkan data anak ke akun Anda.
+              </p>
+            </div>
           </section>
         )}
 
         <section className="grid gap-3 sm:grid-cols-3">
           <SmallCard
-            title="Anak"
+            title="Anak Terhubung"
             value={`${totalAnak}`}
-            desc="Terhubung"
+            desc={totalAnak > 0 ? 'Data anak aktif di akun' : 'Belum ada data anak'}
             icon={<GraduationCap className="h-5 w-5" />}
+            iconClassName="bg-blue-50 text-blue-700"
           />
 
           <SmallCard
-            title="Jadwal"
+            title="Jadwal Mendatang"
             value={`${data.jadwalTerdekat.length}`}
-            desc="Terdekat"
+            desc={
+              data.jadwalTerdekat.length > 0
+                ? 'Sesi belajar terdekat'
+                : 'Belum ada jadwal'
+            }
             icon={<CalendarDays className="h-5 w-5" />}
+            iconClassName="bg-amber-50 text-amber-700"
           />
 
           <SmallCard
-            title="SPP"
-            value={sppBelum > 0 ? `${sppBelum}` : '0'}
-            desc={sppBelum > 0 ? 'Belum lunas' : 'Aman'}
+            title="Tagihan SPP"
+            value={`${sppBelum}`}
+            desc={sppBelum > 0 ? 'Perlu dibayar' : 'Tidak ada tunggakan'}
             icon={<WalletCards className="h-5 w-5" />}
+            iconClassName={
+              sppBelum > 0
+                ? 'bg-red-50 text-red-700'
+                : 'bg-emerald-50 text-emerald-700'
+            }
           />
         </section>
 
-        <section className="grid gap-5 lg:grid-cols-2">
+        <section className="grid items-stretch gap-5 lg:grid-cols-2">
           <Panel
-            title="Anak"
-            desc="Data anak yang terhubung."
+            title="Data Anak"
+            desc="Anak yang terhubung ke akun Anda."
             href="/ortu/profil"
             label="Lihat profil"
           >
             {data.anakList.length === 0 ? (
               <EmptyState text="Belum ada data anak." />
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {data.anakList.map((anak) => (
                   <div
                     key={anak.id}
-                    className="flex items-center gap-3 rounded-[22px] border border-[#EEF3EC] bg-[#FAFCF9] p-4"
+                    className="flex min-h-[76px] items-center gap-3 rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4"
                   >
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#F3F8F1] text-sm font-black text-[#063D27]">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-sm font-bold text-blue-700">
                       {getInitials(anak.nama)}
                     </div>
 
                     <div className="min-w-0 flex-1">
-                      <p className="truncate font-black text-[#063D27]">
+                      <p className="truncate text-sm font-bold text-slate-900 sm:text-[15px]">
                         {anak.nama}
                       </p>
-                      <p className="mt-0.5 text-sm font-semibold text-slate-400">
+                      <p className="mt-1 truncate text-sm font-medium text-slate-500">
                         {anak.kelas ?? '-'} · {anak.sekolah ?? '-'}
                       </p>
                     </div>
 
                     {anak.aktif ? (
-                      <span className="rounded-full bg-[#ECFDF3] px-3 py-1 text-xs font-black text-[#027A48]">
+                      <span className="shrink-0 rounded-lg bg-emerald-50 px-2.5 py-1.5 text-xs font-bold text-emerald-700">
                         Aktif
                       </span>
                     ) : (
-                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-500">
+                      <span className="shrink-0 rounded-lg bg-slate-200/70 px-2.5 py-1.5 text-xs font-bold text-slate-600">
                         Nonaktif
                       </span>
                     )}
@@ -298,30 +317,36 @@ export default async function OrtuDashboardPage() {
             {data.jadwalTerdekat.length === 0 ? (
               <EmptyState text="Belum ada jadwal terdekat." />
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {data.jadwalTerdekat.map((item: any) => {
                   const sesi = item.sesi
 
                   return (
                     <div
                       key={item.id}
-                      className="rounded-[22px] border border-[#EEF3EC] bg-[#FAFCF9] p-4"
+                      className="min-h-[92px] rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4"
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="font-black text-[#063D27]">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-bold text-slate-900 sm:text-[15px]">
                             {sesi?.mapel ?? '-'}
                           </p>
 
-                          <p className="mt-1 text-sm font-semibold text-slate-500">
-                            {item.siswa?.nama ?? '-'} ·{' '}
-                            {sesi?.tanggal ? formatTanggal(sesi.tanggal) : '-'}
+                          <p className="mt-1.5 text-sm font-medium text-slate-600">
+                            {item.siswa?.nama ?? '-'}
                           </p>
 
-                          <p className="mt-1 text-xs font-semibold text-slate-400">
-                            {sesi?.jam_mulai?.slice(0, 5) ?? '-'} ·{' '}
-                            {sesi?.tentor?.full_name ?? 'Tentor'}
-                          </p>
+                          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-semibold text-slate-500">
+                            <span>
+                              {sesi?.tanggal
+                                ? formatTanggal(sesi.tanggal)
+                                : '-'}
+                            </span>
+                            <span className="text-slate-300">•</span>
+                            <span>{sesi?.jam_mulai?.slice(0, 5) ?? '-'}</span>
+                            <span className="text-slate-300">•</span>
+                            <span>{sesi?.tentor?.full_name ?? 'Tentor'}</span>
+                          </div>
                         </div>
 
                         <StatusBadge status={sesi?.status ?? 'terjadwal'} />
@@ -334,37 +359,37 @@ export default async function OrtuDashboardPage() {
           </Panel>
 
           <Panel
-            title="Tagihan Bulan Ini"
-            desc="Status SPP anak bulan berjalan."
+            title={`Tagihan ${bulanIni}`}
+            desc="Status pembayaran SPP bulan ini."
             href="/ortu/tagihan"
             label="Lihat tagihan"
           >
             {data.sppBulanIni.length === 0 ? (
               <EmptyState text="Belum ada tagihan bulan ini." />
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {data.sppBulanIni.map((item: any) => (
                   <div
                     key={item.id}
-                    className="flex items-center justify-between gap-3 rounded-[22px] border border-[#EEF3EC] bg-[#FAFCF9] p-4"
+                    className="flex min-h-[76px] items-center justify-between gap-4 rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4"
                   >
-                    <div>
-                      <p className="font-black text-[#063D27]">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-slate-900 sm:text-[15px]">
                         {item.siswa?.nama ?? '-'}
                       </p>
-                      <p className="mt-1 text-sm font-semibold text-slate-500">
+                      <p className="mt-1.5 text-sm font-bold text-slate-600">
                         {formatRupiah(Number(item.nominal || 0))}
                       </p>
                     </div>
 
                     {item.status === 'lunas' ? (
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-[#ECFDF3] px-3 py-1 text-xs font-black text-[#027A48]">
+                      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1.5 text-xs font-bold text-emerald-700">
                         <CheckCircle2 className="h-3.5 w-3.5" />
                         Lunas
                       </span>
                     ) : (
-                      <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-black text-red-600">
-                        Belum
+                      <span className="shrink-0 rounded-lg bg-red-50 px-2.5 py-1.5 text-xs font-bold text-red-700">
+                        Belum lunas
                       </span>
                     )}
                   </div>
@@ -382,32 +407,36 @@ export default async function OrtuDashboardPage() {
             {data.jurnalTerbaru.length === 0 ? (
               <EmptyState text="Belum ada jurnal terbaru." />
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {data.jurnalTerbaru.map((item: any) => {
                   const sesi = item.sesi
 
                   return (
                     <div
                       key={item.id}
-                      className="rounded-[22px] border border-[#EEF3EC] bg-[#FAFCF9] p-4"
+                      className="min-h-[92px] rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4"
                     >
                       <div className="flex items-start gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#F3F8F1] text-[#063D27]">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-700">
                           <BookOpenCheck className="h-5 w-5" />
                         </div>
 
                         <div className="min-w-0 flex-1">
-                          <p className="font-black text-[#063D27]">
+                          <p className="truncate text-sm font-bold text-slate-900 sm:text-[15px]">
                             {sesi?.mapel ?? 'Sesi belajar'}
                           </p>
 
-                          <p className="mt-1 text-sm font-semibold text-slate-500">
+                          <p className="mt-1 text-sm font-medium text-slate-600">
                             {item.siswa?.nama ?? '-'} ·{' '}
-                            {sesi?.tanggal ? formatTanggal(sesi.tanggal) : '-'}
+                            {sesi?.tanggal
+                              ? formatTanggal(sesi.tanggal)
+                              : '-'}
                           </p>
 
-                          <p className="mt-1 line-clamp-2 text-xs font-semibold leading-5 text-slate-400">
-                            {item.deskripsi || item.materi || 'Klik menu jurnal untuk melihat detail.'}
+                          <p className="mt-2 line-clamp-2 text-xs font-medium leading-5 text-slate-500">
+                            {item.deskripsi ||
+                              item.materi ||
+                              'Buka jurnal untuk melihat catatan belajar.'}
                           </p>
                         </div>
                       </div>
@@ -423,29 +452,54 @@ export default async function OrtuDashboardPage() {
   )
 }
 
+function HeaderStat({
+  label,
+  value,
+}: {
+  label: string
+  value: string
+}) {
+  return (
+    <div className="flex min-h-[76px] flex-col justify-center rounded-2xl border border-white/10 bg-white/10 px-3 py-3 text-center backdrop-blur-sm sm:px-4">
+      <p className="text-xl font-bold leading-none text-white sm:text-2xl">
+        {value}
+      </p>
+      <p className="mt-2 text-[11px] font-semibold leading-tight text-white/65 sm:text-xs">
+        {label}
+      </p>
+    </div>
+  )
+}
+
 function SmallCard({
   title,
   value,
   desc,
   icon,
+  iconClassName,
 }: {
   title: string
   value: string
   desc: string
   icon: React.ReactNode
+  iconClassName: string
 }) {
   return (
-    <div className="rounded-[26px] border border-[#E2EBDD] bg-white p-5">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">
-            {title}
+    <div className="min-h-[140px] rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+      <div className="flex h-full items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-slate-500">{title}</p>
+          <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900">
+            {value}
           </p>
-          <p className="mt-2 text-3xl font-black text-[#063D27]">{value}</p>
-          <p className="mt-1 text-sm font-semibold text-slate-400">{desc}</p>
+          <p className="mt-1.5 text-xs font-medium leading-5 text-slate-500">
+            {desc}
+          </p>
         </div>
 
-        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#F3F8F1] text-[#063D27]">
+        <div
+          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${iconClassName}`}
+        >
           {icon}
         </div>
       </div>
@@ -467,42 +521,44 @@ function Panel({
   children: React.ReactNode
 }) {
   return (
-    <section className="rounded-[28px] border border-[#E2EBDD] bg-white p-5">
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-black text-[#063D27]">{title}</h2>
-          <p className="mt-1 text-sm font-semibold leading-6 text-slate-400">
+    <section className="flex h-full min-h-[350px] flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.04)] sm:p-6">
+      <div className="mb-5 flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h2 className="text-lg font-bold tracking-tight text-slate-900">
+            {title}
+          </h2>
+          <p className="mt-1 text-sm font-medium leading-5 text-slate-500">
             {desc}
           </p>
         </div>
 
         <Link
           href={href}
-          className="shrink-0 rounded-full bg-[#F3F8F1] px-4 py-2 text-xs font-black text-[#063D27] transition hover:bg-[#E7F1E4]"
+          className="shrink-0 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-[#0B513B] transition-colors hover:border-[#BFD6CB] hover:bg-[#F1F8F4] focus:outline-none focus:ring-2 focus:ring-[#0B513B]/20"
         >
           {label}
         </Link>
       </div>
 
-      {children}
+      <div className="flex-1">{children}</div>
     </section>
   )
 }
 
 function EmptyState({ text }: { text: string }) {
   return (
-    <div className="rounded-[22px] border border-dashed border-[#DDE9DB] bg-[#FAFCF9] px-5 py-8 text-center">
-      <p className="text-sm font-bold text-slate-400">{text}</p>
+    <div className="flex min-h-[190px] items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-8 text-center">
+      <p className="text-sm font-semibold text-slate-500">{text}</p>
     </div>
   )
 }
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
-    selesai: 'bg-[#ECFDF3] text-[#027A48]',
+    selesai: 'bg-emerald-50 text-emerald-700',
     berlangsung: 'bg-blue-50 text-blue-700',
-    terjadwal: 'bg-[#F3F8F1] text-[#063D27]',
-    dibatalkan: 'bg-red-50 text-red-600',
+    terjadwal: 'bg-amber-50 text-amber-700',
+    dibatalkan: 'bg-red-50 text-red-700',
   }
 
   const label: Record<string, string> = {
@@ -514,7 +570,7 @@ function StatusBadge({ status }: { status: string }) {
 
   return (
     <span
-      className={`rounded-full px-3 py-1 text-xs font-black ${
+      className={`shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-bold ${
         map[status] ?? map.terjadwal
       }`}
     >

@@ -1,11 +1,11 @@
 'use client'
 
+import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   BookOpenCheck,
   CalendarDays,
-  GraduationCap,
   LayoutDashboard,
   LogOut,
   UserRound,
@@ -51,55 +51,78 @@ export default function OrtuSidebar() {
   }
 
   return (
-    <aside className="hidden min-h-screen w-[260px] shrink-0 border-r border-[#E2EBDD] bg-[#FBFDF9] px-4 py-5 md:block">
-      <div className="sticky top-5 flex max-h-[calc(100vh-40px)] flex-col">
-        <div className="rounded-[26px] border border-[#E2EBDD] bg-white p-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#F3F8F1] text-[#063D27]">
-              <GraduationCap className="h-5 w-5" />
-            </div>
+    <aside className="hidden min-h-screen w-[280px] shrink-0 border-r border-slate-200 bg-white lg:block">
+      <div className="sticky top-0 flex h-screen flex-col px-4 py-5">
+        {/* Logo */}
+        <div className="flex h-[82px] items-center gap-3.5 rounded-2xl border border-slate-200 bg-slate-50 px-4">
+          <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <Image
+              src="/images/logo bimbel.jpg"
+              alt="Logo CBS"
+              fill
+              priority
+              sizes="48px"
+              className="object-cover"
+            />
+          </div>
 
-            <div>
-              <p className="text-sm font-black leading-tight text-[#063D27]">
-                CBS System
-              </p>
-              <p className="mt-1 text-xs font-semibold text-slate-400">
-                Orang Tua
-              </p>
-            </div>
+          <div className="min-w-0">
+            <p className="truncate text-[15px] font-bold leading-5 text-slate-900">
+              CBS System
+            </p>
+
+            <p className="mt-0.5 text-xs font-medium text-slate-500">
+              Orang Tua
+            </p>
           </div>
         </div>
 
-        <nav className="mt-5 flex flex-1 flex-col gap-1.5 overflow-y-auto pr-1">
+        {/* Menu */}
+        <nav className="mt-6 flex flex-1 flex-col gap-2 overflow-y-auto">
           {menuItems.map((item) => {
             const Icon = item.icon
+
             const active =
-              pathname === item.href || pathname.startsWith(`${item.href}/`)
+              pathname === item.href ||
+              pathname.startsWith(`${item.href}/`)
 
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex h-11 items-center gap-3 rounded-2xl px-4 text-sm font-bold transition ${
+                aria-current={active ? 'page' : undefined}
+                className={`flex h-12 items-center gap-3 rounded-xl px-3.5 text-sm font-semibold transition-colors ${
                   active
-                    ? 'bg-[#063D27] text-white'
-                    : 'text-slate-500 hover:bg-[#F3F8F1] hover:text-[#063D27]'
+                    ? 'bg-[#0B513B] text-white shadow-[0_6px_16px_rgba(11,81,59,0.16)]'
+                    : 'text-slate-600 hover:bg-[#F1F8F4] hover:text-[#0B513B]'
                 }`}
               >
-                <Icon className="h-4.5 w-4.5" />
-                {item.label}
+                <span
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+                    active
+                      ? 'bg-white/10 text-white'
+                      : 'bg-slate-100 text-slate-500'
+                  }`}
+                >
+                  <Icon className="h-[18px] w-[18px]" />
+                </span>
+
+                <span className="leading-none">
+                  {item.label}
+                </span>
               </Link>
             )
           })}
         </nav>
 
-        <div className="mt-5 rounded-[24px] border border-[#E2EBDD] bg-white p-3">
+        {/* Logout */}
+        <div className="mt-5 border-t border-slate-200 pt-4">
           <button
             type="button"
             onClick={handleLogout}
-            className="flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-[#F8FAF7] text-sm font-bold text-slate-500 transition hover:bg-red-50 hover:text-red-600"
+            className="flex h-12 w-full items-center justify-center gap-2.5 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-600 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-700 focus:outline-none focus:ring-2 focus:ring-red-500/20"
           >
-            <LogOut className="h-4 w-4" />
+            <LogOut className="h-[18px] w-[18px]" />
             Keluar
           </button>
         </div>

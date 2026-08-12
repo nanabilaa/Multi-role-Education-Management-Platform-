@@ -1,60 +1,74 @@
+// app/(dashboard)/admin/jadwal/page.tsx
+
 import { createClient } from '@/lib/supabase/server'
-import Header from '@/components/admin/Header'
+import type { Profile, Siswa } from '@/lib/types'
 import JadwalClient from './JadwalClient'
+
+type TentorOption = Pick<Profile, 'id' | 'full_name'>
+type SiswaOption = Pick<Siswa, 'id' | 'nama' | 'kelas'>
 
 export default async function JadwalPage() {
   const supabase = await createClient()
 
-  const { data: sesiList, error: sesiError } = await supabase
-    .from('sesi')
-    .select(`
-      id,
-      tanggal,
-      jam_mulai,
-      mapel,
-      durasi,
-      status,
-      tentor:profiles(full_name),
-      sesi_siswa(
-        siswa:siswa(nama)
-      ),
-      jurnal(id)
-    `)
-    .order('tanggal', { ascending: false })
-    .order('jam_mulai', { ascending: true })
-    .limit(100)
+  const [tentorResult, siswaResult] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('id, full_name')
+      .eq('role', 'tentor')
+      .order('full_name', { ascending: true }),
 
-  const { data: tentorList, error: tentorError } = await supabase
-    .from('profiles')
-    .select('id, full_name')
-    .eq('role', 'tentor')
-    .order('full_name', { ascending: true })
+    supabase
+      .from('siswa')
+      .select('id, nama, kelas')
+      .order('nama', { ascending: true }),
+  ])
 
-  if (sesiError) {
+  const tentorError = tentorResult.error
+  const siswaError = siswaResult.error
+
+  if (tentorError || siswaError) {
+    const error = tentorError ?? siswaError
+
+    console.error('Gagal mengambil data jadwal:', {
+      tentorError,
+      siswaError,
+    })
+
     return (
-      <div className="p-6">
-        <h1 className="text-xl font-semibold text-red-500">Gagal mengambil jadwal</h1>
-        <p>{sesiError.message}</p>
+      <div className="px-6 pb-6 mt-4">
+        <div className="rounded-xl border border-red-200 bg-red-50 p-5">
+          <h1 className="text-lg font-semibold text-red-600">
+            Gagal mengambil data jadwal
+          </h1>
+
+          <p className="mt-2 text-sm text-red-500">
+            {error?.message ??
+              'Terjadi kesalahan saat mengambil data tentor dan siswa.'}
+          </p>
+        </div>
       </div>
     )
   }
 
-  if (tentorError) {
-    return (
-      <div className="p-6">
-        <h1 className="text-xl font-semibold text-red-500">Gagal mengambil data tentor</h1>
-        <p>{tentorError.message}</p>
-      </div>
-    )
-  }
+  const tentorList: TentorOption[] = (tentorResult.data ?? []).map(
+    (tentor) => ({
+      id: tentor.id,
+      full_name: tentor.full_name,
+    })
+  )
+
+  const siswaList: SiswaOption[] = (siswaResult.data ?? []).map(
+    (siswa) => ({
+      id: siswa.id,
+      nama: siswa.nama,
+      kelas: siswa.kelas,
+    })
+  )
 
   return (
-    <>
-      <Header
-        title="Jadwal Sesi"
-        subtitle="Pantau semua jadwal sesi bimbel"
-      />
-      <JadwalClient sesiList={sesiList ?? []} tentorList={tentorList ?? []} />
-    </>
+    <JadwalClient
+      tentorList={tentorList}
+      siswaList={siswaList}
+    />
   )
 }

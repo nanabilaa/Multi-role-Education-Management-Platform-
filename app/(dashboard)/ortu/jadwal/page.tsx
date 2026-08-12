@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import {
   CalendarDays,
+  ChevronDown,
   Clock3,
   GraduationCap,
   UserRound,
@@ -29,19 +30,19 @@ async function getJadwalData() {
     .from('sesi_siswa')
     .select(
       `
-      id,
-      hadir,
-      siswa:siswa(id, nama, kelas, sekolah),
-      sesi:sesi(
         id,
-        tanggal,
-        jam_mulai,
-        durasi,
-        mapel,
-        status,
-        tentor:profiles(full_name)
-      )
-    `
+        hadir,
+        siswa:siswa(id, nama, kelas, sekolah),
+        sesi:sesi(
+          id,
+          tanggal,
+          jam_mulai,
+          durasi,
+          mapel,
+          status,
+          tentor:profiles(full_name)
+        )
+      `
     )
     .in('siswa_id', anakIds)
     .order('sesi(tanggal)', { ascending: false })
@@ -53,17 +54,17 @@ export default async function OrtuJadwalPage() {
   const jadwalList = await getJadwalData()
 
   return (
-    <main className="min-h-screen bg-[#F8FAF7] px-4 py-5 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl space-y-5">
+    <main className="min-h-screen bg-[#F5F7FA] px-4 py-5 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
+      <div className="mx-auto w-full max-w-6xl space-y-5">
         <Header
           title="Jadwal Anak"
-          desc="Pantau sesi belajar anak, mapel, tentor, jam, dan status sesi."
+          desc="Lihat jadwal belajar, tentor, waktu, dan status sesi."
           icon={<CalendarDays className="h-5 w-5" />}
         />
 
-        <section className="rounded-[28px] border border-[#E7EFE6] bg-white p-5">
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)] sm:p-6">
           {jadwalList.length === 0 ? (
-            <EmptyState text="Belum ada jadwal untuk anak yang terhubung." />
+            <EmptyState text="Belum ada jadwal belajar." />
           ) : (
             <div className="space-y-3">
               {jadwalList.map((item: any) => {
@@ -73,56 +74,76 @@ export default async function OrtuJadwalPage() {
                 return (
                   <details
                     key={item.id}
-                    className="group rounded-[24px] border border-[#EEF3EC] bg-[#FAFCF9]"
+                    className="group overflow-hidden rounded-2xl border border-slate-200 bg-white transition-colors open:border-[#BFD6CB]"
                   >
-                    <summary className="flex cursor-pointer list-none items-start gap-3 p-4">
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[18px] bg-[#F3F8F1] text-[#063D27]">
+                    <summary className="flex cursor-pointer list-none items-center gap-3 p-4 transition-colors hover:bg-slate-50 sm:p-5 [&::-webkit-details-marker]:hidden">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
                         <CalendarDays className="h-5 w-5" />
                       </div>
 
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <p className="font-black text-[#063D27]">
+                          <p className="truncate text-sm font-bold text-slate-900 sm:text-[15px]">
                             {sesi?.mapel ?? '-'}
                           </p>
 
-                          <StatusBadge status={sesi?.status ?? 'terjadwal'} />
+                          <StatusBadge
+                            status={sesi?.status ?? 'terjadwal'}
+                          />
                         </div>
 
-                        <p className="mt-1 text-sm font-bold text-slate-500">
+                        <p className="mt-1.5 truncate text-sm font-medium text-slate-500">
                           {siswa?.nama ?? '-'} ·{' '}
-                          {sesi?.tanggal ? formatTanggal(sesi.tanggal) : '-'} ·{' '}
-                          {sesi?.jam_mulai?.slice(0, 5) ?? '-'}
+                          {sesi?.tanggal
+                            ? formatTanggal(sesi.tanggal)
+                            : '-'}{' '}
+                          · {sesi?.jam_mulai?.slice(0, 5) ?? '-'}
                         </p>
+                      </div>
+
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500 transition-transform duration-200 group-open:rotate-180">
+                        <ChevronDown className="h-4 w-4" />
                       </div>
                     </summary>
 
-                    <div className="grid gap-3 border-t border-[#EEF3EC] px-4 pb-4 pt-3 sm:grid-cols-2">
-                      <InfoRow
-                        icon={<GraduationCap className="h-4 w-4" />}
-                        label="Siswa"
-                        value={`${siswa?.nama ?? '-'} · ${siswa?.kelas ?? '-'}`}
-                      />
+                    <div className="border-t border-slate-200 bg-slate-50/60 p-4 sm:p-5">
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <InfoRow
+                          icon={<GraduationCap className="h-4 w-4" />}
+                          label="Siswa"
+                          value={`${siswa?.nama ?? '-'} · ${
+                            siswa?.kelas ?? '-'
+                          }`}
+                          iconClassName="bg-blue-50 text-blue-700"
+                        />
 
-                      <InfoRow
-                        icon={<UserRound className="h-4 w-4" />}
-                        label="Tentor"
-                        value={sesi?.tentor?.full_name ?? '-'}
-                      />
+                        <InfoRow
+                          icon={<UserRound className="h-4 w-4" />}
+                          label="Tentor"
+                          value={sesi?.tentor?.full_name ?? '-'}
+                          iconClassName="bg-violet-50 text-violet-700"
+                        />
 
-                      <InfoRow
-                        icon={<Clock3 className="h-4 w-4" />}
-                        label="Jam & Durasi"
-                        value={`${sesi?.jam_mulai?.slice(0, 5) ?? '-'} · ${
-                          sesi?.durasi ?? '-'
-                        } menit`}
-                      />
+                        <InfoRow
+                          icon={<Clock3 className="h-4 w-4" />}
+                          label="Jam & Durasi"
+                          value={`${sesi?.jam_mulai?.slice(0, 5) ?? '-'} · ${
+                            sesi?.durasi ?? '-'
+                          } menit`}
+                          iconClassName="bg-amber-50 text-amber-700"
+                        />
 
-                      <InfoRow
-                        icon={<CalendarDays className="h-4 w-4" />}
-                        label="Tanggal"
-                        value={sesi?.tanggal ? formatTanggal(sesi.tanggal) : '-'}
-                      />
+                        <InfoRow
+                          icon={<CalendarDays className="h-4 w-4" />}
+                          label="Tanggal"
+                          value={
+                            sesi?.tanggal
+                              ? formatTanggal(sesi.tanggal)
+                              : '-'
+                          }
+                          iconClassName="bg-emerald-50 text-emerald-700"
+                        />
+                      </div>
                     </div>
                   </details>
                 )
@@ -145,19 +166,20 @@ function Header({
   icon: React.ReactNode
 }) {
   return (
-    <section className="rounded-[32px] border border-[#E7EFE6] bg-white p-6 sm:p-7">
-      <div className="inline-flex items-center gap-2 rounded-full border border-[#E7EFE6] bg-[#F3F8F1] px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-[#063D27]">
-        {icon}
-        Portal Orang Tua
+    <section className="overflow-hidden rounded-3xl border border-[#DDE7E2] bg-[#0B513B] shadow-[0_10px_30px_rgba(15,61,46,0.08)]">
+      <div className="p-6 sm:p-8">
+        <div className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-white">
+          {icon}
+        </div>
+
+        <h1 className="mt-5 text-2xl font-bold tracking-tight text-white sm:text-3xl lg:text-[34px]">
+          {title}
+        </h1>
+
+        <p className="mt-2 max-w-2xl text-sm font-medium leading-6 text-white/70 sm:text-base">
+          {desc}
+        </p>
       </div>
-
-      <h1 className="mt-5 text-3xl font-black tracking-tight text-[#063D27] sm:text-4xl">
-        {title}
-      </h1>
-
-      <p className="mt-3 max-w-2xl text-sm font-medium leading-7 text-slate-500 sm:text-base">
-        {desc}
-      </p>
     </section>
   )
 }
@@ -166,23 +188,26 @@ function InfoRow({
   icon,
   label,
   value,
+  iconClassName,
 }: {
   icon: React.ReactNode
   label: string
   value: string
+  iconClassName: string
 }) {
   return (
-    <div className="flex gap-3 rounded-[20px] border border-[#EEF3EC] bg-white p-4">
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-[#F3F8F1] text-[#063D27]">
+    <div className="flex min-h-[82px] items-center gap-3 rounded-xl border border-slate-200 bg-white p-4">
+      <div
+        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${iconClassName}`}
+      >
         {icon}
       </div>
 
-      <div>
-        <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-400">
-          {label}
+      <div className="min-w-0">
+        <p className="text-xs font-semibold text-slate-500">{label}</p>
+        <p className="mt-1 truncate text-sm font-bold text-slate-800">
+          {value}
         </p>
-
-        <p className="mt-1 text-sm font-bold text-slate-700">{value}</p>
       </div>
     </div>
   )
@@ -190,18 +215,22 @@ function InfoRow({
 
 function EmptyState({ text }: { text: string }) {
   return (
-    <div className="rounded-[24px] border border-dashed border-[#DDE9DB] bg-[#FAFCF9] px-5 py-10 text-center">
-      <p className="text-sm font-bold text-slate-500">{text}</p>
+    <div className="flex min-h-[240px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center">
+      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
+        <CalendarDays className="h-5 w-5" />
+      </div>
+
+      <p className="mt-4 text-sm font-semibold text-slate-500">{text}</p>
     </div>
   )
 }
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
-    selesai: 'bg-[#ECFDF3] text-[#027A48]',
+    selesai: 'bg-emerald-50 text-emerald-700',
     berlangsung: 'bg-blue-50 text-blue-700',
-    terjadwal: 'bg-[#F3F8F1] text-[#063D27]',
-    dibatalkan: 'bg-red-50 text-red-600',
+    terjadwal: 'bg-amber-50 text-amber-700',
+    dibatalkan: 'bg-red-50 text-red-700',
   }
 
   const label: Record<string, string> = {
@@ -213,7 +242,7 @@ function StatusBadge({ status }: { status: string }) {
 
   return (
     <span
-      className={`rounded-full px-3 py-1 text-xs font-black ${
+      className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-bold ${
         map[status] ?? map.terjadwal
       }`}
     >

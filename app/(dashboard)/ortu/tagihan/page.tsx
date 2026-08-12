@@ -72,11 +72,6 @@ export default async function OrtuTagihanPage() {
         />
 
         <section className="grid gap-3 sm:grid-cols-3">
-          <StatCard
-            title="Total Tagihan"
-            value={formatRupiah(totalTagihan)}
-            desc="Semua periode tampil"
-          />
 
           <StatCard
             title="Sudah Lunas"

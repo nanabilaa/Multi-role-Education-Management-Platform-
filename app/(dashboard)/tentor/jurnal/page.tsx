@@ -1,117 +1,109 @@
 'use client'
 
-import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react'
 import {
-  BookOpenCheck,
-  CalendarDays,
+  AlertCircle,
+  BookOpen,
+  Camera,
   CheckCircle2,
-  Clock3,
+  ChevronDown,
   ImageIcon,
   Loader2,
-  LockKeyhole,
-  Save,
-  UsersRound,
+  Lock,
+  UserRound,
 } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
 
-type SiswaRow = {
+type StudentInfo = {
   id: string
-  nama: string | null
+  nama: string
   kelas: string | null
   sekolah: string | null
 }
 
-type RelasiSiswaRow = {
+type JurnalInfo = {
+  id: string
+  materi: string | null
+  catatan: string | null
+  foto_url: string | null
+  foto_validasi_url: string | null
+  foto_validasi_path: string | null
+  submitted_at: string | null
+}
+
+type SessionStudentRow = {
   id: string
   hadir: boolean | null
   materi: string | null
   deskripsi: string | null
-  siswa: SiswaRow | SiswaRow[] | null
+  siswa: StudentInfo | StudentInfo[] | null
 }
 
-type JurnalRow = {
+type SessionRow = {
   id: string
-  materi: string | null
-  catatan: string | null
-  ringkasan: string | null
-  foto_url: string | null
-  foto_validasi_url: string | null
-  foto_validasi_path?: string | null
-  submitted_at: string | null
-}
-
-type SesiRow = {
-  id: string
+  tentor_id: string
   tanggal: string
-  jam_mulai: string
-  durasi: number
-  mapel: string
-  status: string
-  sesi_siswa: RelasiSiswaRow[]
-  jurnal: JurnalRow[]
+  jam_mulai: string | null
+  durasi: number | null
+  mapel: string | null
+  status: string | null
+  jurnal: JurnalInfo | JurnalInfo[] | null
+  sesi_siswa: SessionStudentRow[] | null
 }
 
-function getSiswaName(siswa: SiswaRow | SiswaRow[] | null) {
-  if (!siswa) return '-'
-  if (Array.isArray(siswa)) return siswa[0]?.nama ?? '-'
-  return siswa.nama ?? '-'
+type StudentForm = {
+  hadir: boolean
+  catatan: string
 }
 
-function getSiswaKelas(siswa: SiswaRow | SiswaRow[] | null) {
-  if (!siswa) return '-'
-  if (Array.isArray(siswa)) return siswa[0]?.kelas ?? '-'
-  return siswa.kelas ?? '-'
+function one<T>(value: T | T[] | null | undefined): T | null {
+  if (!value) return null
+  return Array.isArray(value) ? value[0] ?? null : value
 }
 
-function formatTanggalSimple(value?: string | null) {
-  if (!value) return '-'
-
-  const date = new Date(value)
-
-  if (Number.isNaN(date.getTime())) return value
-
+function formatTanggal(value: string) {
   return new Intl.DateTimeFormat('id-ID', {
+    weekday: 'long',
     day: '2-digit',
     month: 'long',
     year: 'numeric',
-  }).format(date)
+  }).format(new Date(value))
+}
+
+function statusBadge(status: string | null) {
+  const value = status || 'terjadwal'
+
+  if (value === 'selesai') {
+    return 'border-[#DDE9DB] bg-[#F3F8F1] text-[#063D27]'
+  }
+
+  if (value === 'dibatalkan') {
+    return 'border-red-100 bg-red-50 text-red-700'
+  }
+
+  if (value === 'berlangsung') {
+    return 'border-[#F5B82E]/30 bg-[#FFF8E6] text-[#8A5C00]'
+  }
+
+  return 'border-[#DDE9DB] bg-white text-[#52645A]'
 }
 
 export default function TentorJurnalPage() {
-  const router = useRouter()
   const supabase = createClient()
 
-  const [loadingPage, setLoadingPage] = useState(true)
+  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [sessions, setSessions] = useState<SessionRow[]>([])
+  const [selectedId, setSelectedId] = useState('')
+  const [forms, setForms] = useState<Record<string, StudentForm>>({})
+  const [foto, setFoto] = useState<File | null>(null)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
-  const [sesiList, setSesiList] = useState<SesiRow[]>([])
-  const [selectedSesiId, setSelectedSesiId] = useState('')
-  const [materi, setMateri] = useState('')
-  const [catatan, setCatatan] = useState('')
-  const [ringkasan, setRingkasan] = useState('')
-  const [foto, setFoto] = useState<File | null>(null)
-  const [hadirIds, setHadirIds] = useState<string[]>([])
-
-  const selectedSesi = useMemo(() => {
-    return sesiList.find((sesi) => sesi.id === selectedSesiId) ?? null
-  }, [sesiList, selectedSesiId])
-
-  const selectedJurnal = selectedSesi?.jurnal?.[0] ?? null
-  const isJurnalLocked = !!selectedJurnal
-
-  const sesiSelesai = sesiList.filter((sesi) => sesi.status === 'selesai')
-  const sudahJurnal = sesiList.filter((sesi) => sesi.jurnal?.length > 0)
-  const belumJurnal = sesiSelesai.filter(
-    (sesi) => !sesi.jurnal || sesi.jurnal.length === 0
-  )
-
   async function loadData() {
-    setLoadingPage(true)
+    setLoading(true)
     setError('')
+    setSuccess('')
 
     const {
       data: { user },
@@ -119,41 +111,42 @@ export default function TentorJurnalPage() {
     } = await supabase.auth.getUser()
 
     if (userError || !user) {
-      window.location.href = '/login'
+      setError('Sesi login tidak ditemukan. Silakan login ulang.')
+      setLoading(false)
       return
     }
 
-    const { data, error: sesiError } = await supabase
+    const { data, error: fetchError } = await supabase
       .from('sesi')
       .select(
         `
         id,
+        tentor_id,
         tanggal,
         jam_mulai,
         durasi,
         mapel,
         status,
-        sesi_siswa(
+        jurnal (
+          id,
+          materi,
+          catatan,
+          foto_url,
+          foto_validasi_url,
+          foto_validasi_path,
+          submitted_at
+        ),
+        sesi_siswa (
           id,
           hadir,
           materi,
           deskripsi,
-          siswa:siswa(
+          siswa (
             id,
             nama,
             kelas,
             sekolah
           )
-        ),
-        jurnal(
-          id,
-          materi,
-          catatan,
-          ringkasan,
-          foto_url,
-          foto_validasi_url,
-          foto_validasi_path,
-          submitted_at
         )
       `
       )
@@ -161,14 +154,22 @@ export default function TentorJurnalPage() {
       .order('tanggal', { ascending: false })
       .order('jam_mulai', { ascending: false })
 
-    if (sesiError) {
-      setError('Gagal mengambil data jurnal: ' + sesiError.message)
-      setLoadingPage(false)
+    if (fetchError) {
+      console.log(fetchError)
+      setError(fetchError.message)
+      setLoading(false)
       return
     }
 
-    setSesiList((data ?? []) as unknown as SesiRow[])
-    setLoadingPage(false)
+    const rows = (data || []) as SessionRow[]
+    setSessions(rows)
+
+    if (!selectedId && rows.length > 0) {
+      const firstUnlocked = rows.find((row) => !one(row.jurnal)?.id)
+      setSelectedId(firstUnlocked?.id || rows[0].id)
+    }
+
+    setLoading(false)
   }
 
   useEffect(() => {
@@ -176,70 +177,81 @@ export default function TentorJurnalPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  function handleSelectSesi(sesiId: string) {
-    setSelectedSesiId(sesiId)
-    setSuccess('')
-    setError('')
+  const selectedSession = useMemo(() => {
+    return sessions.find((item) => item.id === selectedId) || null
+  }, [sessions, selectedId])
+
+  const selectedJurnal = one(selectedSession?.jurnal)
+  const locked = Boolean(selectedJurnal?.id)
+  const selectedStudents = selectedSession?.sesi_siswa || []
+  const fotoLama = selectedJurnal?.foto_validasi_url || selectedJurnal?.foto_url || null
+
+  useEffect(() => {
+    if (!selectedSession) return
+
     setFoto(null)
 
-    const sesi = sesiList.find((item) => item.id === sesiId)
+    const nextForms: Record<string, StudentForm> = {}
 
-    if (!sesi) {
-      setMateri('')
-      setCatatan('')
-      setRingkasan('')
-      setHadirIds([])
-      return
-    }
-
-    const jurnal = sesi.jurnal?.[0]
-
-    setMateri(jurnal?.materi ?? '')
-    setCatatan(jurnal?.catatan ?? '')
-    setRingkasan(jurnal?.ringkasan ?? '')
-
-    const defaultHadirIds = (sesi.sesi_siswa ?? [])
-      .filter((relasi) => relasi.hadir === true)
-      .map((relasi) => relasi.id)
-
-    setHadirIds(defaultHadirIds)
-
-    if (jurnal?.id) {
-      setError('Jurnal sesi ini sudah tersimpan dan tidak bisa diedit lagi.')
-    }
-  }
-
-  function toggleHadir(relasiId: string) {
-    if (isJurnalLocked) return
-
-    setHadirIds((prev) => {
-      if (prev.includes(relasiId)) {
-        return prev.filter((id) => id !== relasiId)
+    for (const row of selectedSession.sesi_siswa || []) {
+      nextForms[row.id] = {
+        hadir: row.hadir ?? true,
+        catatan: row.deskripsi || '',
       }
+    }
 
-      return [...prev, relasiId]
-    })
+    setForms(nextForms)
+  }, [selectedSession])
+
+  function updateForm(rowId: string, key: keyof StudentForm, value: string | boolean) {
+    setForms((prev) => ({
+      ...prev,
+      [rowId]: {
+        ...prev[rowId],
+        [key]: value,
+      },
+    }))
   }
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault()
+  function handleFotoChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] || null
+    setFoto(file)
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
 
     setError('')
     setSuccess('')
 
-    if (!selectedSesiId) {
+    if (!selectedSession) {
       setError('Pilih sesi dulu ya.')
       return
     }
 
-    if (isJurnalLocked) {
+    if (locked) {
       setError('Jurnal sudah tersimpan dan tidak bisa diedit lagi.')
       return
     }
 
-    if (!materi.trim()) {
-      setError('Materi wajib diisi.')
+    if (selectedStudents.length === 0) {
+      setError('Sesi ini belum punya murid.')
       return
+    }
+
+    if (!foto) {
+      setError('Foto kelas wajib diunggah.')
+      return
+    }
+
+    for (const row of selectedStudents) {
+      const siswa = one(row.siswa)
+      const form = forms[row.id]
+
+      if (!form?.catatan?.trim()) {
+        setError(`Catatan untuk ${siswa?.nama || 'murid'} belum diisi.`)
+        return
+      }
     }
 
     setSaving(true)
@@ -250,595 +262,337 @@ export default function TentorJurnalPage() {
     } = await supabase.auth.getUser()
 
     if (userError || !user) {
+      setError('Sesi login tidak ditemukan. Silakan login ulang.')
       setSaving(false)
-      setError('Sesi login habis. Silakan login ulang.')
       return
     }
 
-    const { data: sesiCek, error: sesiCekError } = await supabase
-      .from('sesi')
-      .select('id, tentor_id')
-      .eq('id', selectedSesiId)
-      .eq('tentor_id', user.id)
-      .single()
+    const safeName = foto.name.replace(/[^a-zA-Z0-9._-]/g, '-')
+    const fotoPath = `${user.id}/${selectedSession.id}/${Date.now()}-${safeName}`
 
-    if (sesiCekError || !sesiCek) {
-      setSaving(false)
-      setError('Sesi tidak ditemukan atau bukan milik akun tentor ini.')
-      return
-    }
-
-    const { data: jurnalLama, error: jurnalLamaError } = await supabase
+    const { error: uploadError } = await supabase.storage
       .from('jurnal')
-      .select('id')
-      .eq('sesi_id', selectedSesiId)
-      .maybeSingle()
+      .upload(fotoPath, foto, {
+        cacheControl: '3600',
+        upsert: false,
+      })
 
-    if (jurnalLamaError) {
+    if (uploadError) {
+      console.log(uploadError)
+      setError(uploadError.message)
       setSaving(false)
-      setError('Gagal cek jurnal lama: ' + jurnalLamaError.message)
       return
     }
 
-    if (jurnalLama?.id) {
-      setSaving(false)
-      setError('Jurnal sudah tersimpan dan tidak bisa diedit lagi.')
-      return
-    }
+    const { data: publicUrlData } = supabase.storage.from('jurnal').getPublicUrl(fotoPath)
+    const fotoUrl = publicUrlData.publicUrl
 
-    let fotoUrl: string | null = null
-    let fotoPath: string | null = null
+    for (const row of selectedStudents) {
+      const form = forms[row.id]
 
-    if (foto && foto.size > 0) {
-      const ext = foto.name.split('.').pop() || 'jpg'
-      const fileName = `${user.id}/${selectedSesiId}-${Date.now()}.${ext}`
-
-      const { error: uploadError } = await supabase.storage
-        .from('jurnal')
-        .upload(fileName, foto, {
-          cacheControl: '3600',
-          upsert: true,
+      const { error: updateError } = await supabase
+        .from('sesi_siswa')
+        .update({
+          hadir: form.hadir,
+          materi: selectedSession.mapel || 'Sesi belajar',
+          deskripsi: form.catatan.trim(),
         })
+        .eq('id', row.id)
+        .eq('sesi_id', selectedSession.id)
 
-      if (uploadError) {
+      if (updateError) {
+        console.log(updateError)
+        setError(updateError.message)
         setSaving(false)
-        setError(
-          'Gagal upload foto. Pastikan bucket storage bernama "jurnal" sudah dibuat. Detail: ' +
-            uploadError.message
-        )
         return
       }
-
-      const { data: publicUrlData } = supabase.storage
-        .from('jurnal')
-        .getPublicUrl(fileName)
-
-      fotoUrl = publicUrlData.publicUrl
-      fotoPath = fileName
     }
 
-    const { error: insertError } = await supabase.from('jurnal').insert({
-      sesi_id: selectedSesiId,
-      materi: materi.trim(),
-      catatan: catatan.trim() || null,
-      ringkasan: ringkasan.trim() || null,
+    const materiGabungan = selectedStudents
+      .map((row) => {
+        const siswa = one(row.siswa)
+        const form = forms[row.id]
+        return `${siswa?.nama || 'Murid'}: ${form.catatan}`
+      })
+      .join('\n\n')
+
+    const { error: jurnalError } = await supabase.from('jurnal').insert({
+      sesi_id: selectedSession.id,
+      tentor_id: user.id,
+      materi: materiGabungan,
+      catatan: null,
       foto_url: fotoUrl,
       foto_validasi_url: fotoUrl,
       foto_validasi_path: fotoPath,
-      tentor_id: user.id,
+      submitted_at: new Date().toISOString(),
     })
 
-    if (insertError) {
+    if (jurnalError) {
+      console.log(jurnalError)
+      setError(jurnalError.message)
       setSaving(false)
-      setError('Gagal menyimpan jurnal: ' + insertError.message)
       return
     }
 
-    const relasiIds = selectedSesi?.sesi_siswa?.map((relasi) => relasi.id) ?? []
+    await supabase.from('sesi').update({ status: 'selesai' }).eq('id', selectedSession.id)
 
-    for (const relasiId of relasiIds) {
-      const { error: relasiError } = await supabase
-        .from('sesi_siswa')
-        .update({
-          hadir: hadirIds.includes(relasiId),
-          materi: materi.trim(),
-          deskripsi: catatan.trim() || ringkasan.trim() || null,
-        })
-        .eq('id', relasiId)
-
-      if (relasiError) {
-        setSaving(false)
-        setError(
-          'Jurnal tersimpan, tapi gagal update kehadiran: ' +
-            relasiError.message
-        )
-        return
-      }
-    }
-
-    const { error: sesiUpdateError } = await supabase
-      .from('sesi')
-      .update({
-        status: 'selesai',
-      })
-      .eq('id', selectedSesiId)
-
-    if (sesiUpdateError) {
-      setSaving(false)
-      setError(
-        'Jurnal tersimpan, tapi gagal update status sesi: ' +
-          sesiUpdateError.message
-      )
-      return
-    }
-
+    setSuccess('Jurnal berhasil disimpan.')
     setSaving(false)
-    setSuccess('Jurnal berhasil disimpan dan sekarang sudah terkunci.')
-    setFoto(null)
 
     await loadData()
-    router.refresh()
   }
 
   return (
     <main className="min-h-screen bg-[#F8FAF7] px-4 py-5 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-6xl space-y-5">
-        <section className="rounded-[32px] border border-[#DDE9DB] bg-white p-6 sm:p-7">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full bg-[#F3F8F1] px-4 py-2 text-xs font-bold text-[#063D27]">
-                <BookOpenCheck className="h-4 w-4" />
-                Portal Tentor
-              </div>
-
-              <h1 className="mt-5 text-3xl font-black tracking-tight text-[#063D27] sm:text-4xl">
-                Jurnal Mengajar
-              </h1>
-
-              <p className="mt-3 max-w-2xl text-sm font-medium leading-7 text-slate-500">
-                Isi materi, catatan, kehadiran, dan foto validasi pembelajaran.
-                Setelah disimpan, jurnal akan dikunci.
-              </p>
-            </div>
-
-            <Link
-              href="/tentor/sesi"
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-[#DDE9DB] bg-[#F3F8F1] px-5 text-sm font-black text-[#063D27] transition hover:bg-[#EAF3E8]"
-            >
-              <CalendarDays className="h-4 w-4" />
-              Lihat Sesi
-            </Link>
+      <section className="mx-auto max-w-6xl space-y-5">
+        <div className="rounded-[32px] border border-[#DDE9DB] bg-white p-6 sm:p-7">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.22em] text-[#0B5738]/70">
+              Jurnal Tentor
+            </p>
+            <h1 className="mt-2 text-2xl font-black tracking-tight text-[#063D27] sm:text-3xl">
+              Validasi murid
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#52645A]">
+              Pilih sesi, upload foto, lalu isi catatan tiap anak.
+            </p>
           </div>
-        </section>
+        </div>
 
         {error && (
-          <div className="rounded-[24px] border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold leading-6 text-red-600">
-            {error}
+          <div className="flex items-start gap-3 rounded-[24px] border border-red-100 bg-red-50 p-4 text-sm text-red-700">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+            <p className="font-semibold">{error}</p>
           </div>
         )}
 
         {success && (
-          <div className="rounded-[24px] border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm font-bold leading-6 text-emerald-700">
-            {success}
+          <div className="flex items-start gap-3 rounded-[24px] border border-[#DDE9DB] bg-[#F3F8F1] p-4 text-sm text-[#063D27]">
+            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
+            <p className="font-semibold">{success}</p>
           </div>
         )}
 
-        <section className="grid gap-3 sm:grid-cols-3">
-          <SmallCard
-            title="Sesi Selesai"
-            value={`${sesiSelesai.length}`}
-            desc="Siap dibuat jurnal"
-            icon={<CheckCircle2 className="h-5 w-5" />}
-          />
-
-          <SmallCard
-            title="Sudah Jurnal"
-            value={`${sudahJurnal.length}`}
-            desc="Terkunci"
-            icon={<LockKeyhole className="h-5 w-5" />}
-          />
-
-          <SmallCard
-            title="Belum Jurnal"
-            value={`${belumJurnal.length}`}
-            desc="Perlu diisi"
-            icon={<Clock3 className="h-5 w-5" />}
-          />
-        </section>
-
-        {loadingPage ? (
-          <section className="rounded-[28px] border border-[#DDE9DB] bg-white p-10 text-center">
-            <Loader2 className="mx-auto h-7 w-7 animate-spin text-[#063D27]" />
-            <p className="mt-3 text-sm font-bold text-slate-400">
-              Memuat data jurnal...
-            </p>
-          </section>
+        {loading ? (
+          <div className="rounded-[28px] border border-[#DDE9DB] bg-white p-8 text-center text-sm font-semibold text-[#52645A]">
+            Memuat data...
+          </div>
+        ) : sessions.length === 0 ? (
+          <div className="rounded-[28px] border border-[#DDE9DB] bg-white p-8 text-center">
+            <BookOpen className="mx-auto h-9 w-9 text-[#0B5738]" />
+            <h2 className="mt-3 text-lg font-black text-[#063D27]">Belum ada sesi</h2>
+          </div>
         ) : (
-          <section className="grid gap-5 lg:grid-cols-[1fr_360px]">
-            <form
-              onSubmit={handleSubmit}
-              className="rounded-[28px] border border-[#DDE9DB] bg-white p-5 sm:p-6"
-            >
-              <div className="mb-6 flex items-start gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[18px] bg-[#F3F8F1] text-[#063D27]">
-                  <BookOpenCheck className="h-5 w-5" />
-                </div>
+          <form onSubmit={handleSubmit} className="grid gap-5 lg:grid-cols-[340px_1fr]">
+            <aside className="space-y-4">
+              <div className="rounded-[28px] border border-[#DDE9DB] bg-white p-5">
+                <label className="text-sm font-black text-[#063D27]">Pilih sesi</label>
 
-                <div>
-                  <h2 className="text-lg font-black text-[#063D27]">
-                    Form Jurnal
-                  </h2>
-                  <p className="mt-1 text-sm font-semibold leading-6 text-slate-400">
-                    Pilih satu sesi dulu, lalu isi jurnalnya.
-                  </p>
-                </div>
+                <select
+                  value={selectedId}
+                  onChange={(event) => setSelectedId(event.target.value)}
+                  className="mt-3 w-full rounded-2xl border border-[#DDE9DB] bg-[#F8FAF7] px-4 py-3 text-sm font-semibold text-[#063D27] outline-none focus:border-[#063D27]"
+                >
+                  {sessions.map((session) => {
+                    const jurnalAda = Boolean(one(session.jurnal)?.id)
+
+                    return (
+                      <option key={session.id} value={session.id}>
+                        {formatTanggal(session.tanggal)} {jurnalAda ? ' - terkunci' : ''}
+                      </option>
+                    )
+                  })}
+                </select>
               </div>
 
-              <div className="space-y-5">
-                <div>
-                  <label
-                    htmlFor="sesi_id"
-                    className="mb-2 block text-xs font-black uppercase tracking-[0.14em] text-slate-400"
-                  >
-                    Pilih Sesi
-                  </label>
-
-                  <select
-                    id="sesi_id"
-                    value={selectedSesiId}
-                    onChange={(e) => handleSelectSesi(e.target.value)}
-                    className="h-12 w-full rounded-full border border-[#DDE9DB] bg-[#FAFCF9] px-4 text-sm font-bold text-slate-700 outline-none transition focus:border-[#063D27] focus:bg-white focus:ring-4 focus:ring-[#063D27]/10"
-                  >
-                    <option value="">Pilih sesi</option>
-
-                    {sesiList.map((sesi) => {
-                      const jurnalAda = sesi.jurnal?.length > 0
-
-                      return (
-                        <option key={sesi.id} value={sesi.id}>
-                          {sesi.mapel} · {formatTanggalSimple(sesi.tanggal)} ·{' '}
-                          {sesi.jam_mulai?.slice(0, 5) ?? '-'}
-                          {jurnalAda ? ' · terkunci' : ''}
-                        </option>
-                      )
-                    })}
-                  </select>
-                </div>
-
-                {selectedSesi && (
-                  <div className="rounded-[22px] border border-[#EEF3EC] bg-[#FAFCF9] p-4">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-black text-[#063D27]">
-                        {selectedSesi.mapel}
+              {selectedSession && (
+                <div className="rounded-[28px] border border-[#DDE9DB] bg-white p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-[0.18em] text-[#0B5738]/70">
+                        Sesi
                       </p>
-
-                      {isJurnalLocked ? (
-                        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
-                          <LockKeyhole className="h-3.5 w-3.5" />
-                          Terkunci
-                        </span>
-                      ) : (
-                        <span className="rounded-full bg-[#FFF8E6] px-3 py-1 text-xs font-black text-[#7A5C00]">
-                          Belum Jurnal
-                        </span>
-                      )}
+                      <h2 className="mt-2 text-lg font-black text-[#063D27]">
+                        {selectedSession.mapel || 'Sesi belajar'}
+                      </h2>
                     </div>
 
-                    <p className="mt-1 text-sm font-semibold text-slate-500">
-                      {formatTanggalSimple(selectedSesi.tanggal)} ·{' '}
-                      {selectedSesi.jam_mulai?.slice(0, 5) ?? '-'} ·{' '}
-                      {selectedSesi.durasi} menit
+                    <span
+                      className={`rounded-full border px-3 py-1 text-xs font-black ${statusBadge(
+                        selectedSession.status
+                      )}`}
+                    >
+                      {selectedSession.status || 'terjadwal'}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 space-y-2 text-sm text-[#52645A]">
+                    <p>
+                      <span className="font-black text-[#063D27]">Tanggal:</span>{' '}
+                      {formatTanggal(selectedSession.tanggal)}
+                    </p>
+                    <p>
+                      <span className="font-black text-[#063D27]">Jam:</span>{' '}
+                      {selectedSession.jam_mulai?.slice(0, 5) || '-'}
+                    </p>
+                    <p>
+                      <span className="font-black text-[#063D27]">Durasi:</span>{' '}
+                      {selectedSession.durasi || '-'} menit
+                    </p>
+                    <p>
+                      <span className="font-black text-[#063D27]">Murid:</span>{' '}
+                      {selectedStudents.length} anak
                     </p>
                   </div>
-                )}
 
-                {isJurnalLocked && (
-                  <div className="rounded-[22px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold leading-6 text-emerald-700">
-                    Jurnal untuk sesi ini sudah tersimpan. Data dikunci supaya
-                    tidak berubah setelah diterima admin dan orang tua.
-                  </div>
-                )}
-
-                <div>
-                  <label
-                    htmlFor="materi"
-                    className="mb-2 block text-xs font-black uppercase tracking-[0.14em] text-slate-400"
-                  >
-                    Materi
-                  </label>
-
-                  <textarea
-                    id="materi"
-                    value={materi}
-                    onChange={(e) => setMateri(e.target.value)}
-                    rows={4}
-                    disabled={isJurnalLocked}
-                    placeholder="Contoh: Pembahasan persamaan linear dan latihan soal."
-                    className="w-full resize-none rounded-[24px] border border-[#DDE9DB] bg-[#FAFCF9] px-4 py-3 text-sm font-bold leading-6 text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-[#063D27] focus:bg-white focus:ring-4 focus:ring-[#063D27]/10 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="catatan"
-                    className="mb-2 block text-xs font-black uppercase tracking-[0.14em] text-slate-400"
-                  >
-                    Catatan Tentor
-                  </label>
-
-                  <textarea
-                    id="catatan"
-                    value={catatan}
-                    onChange={(e) => setCatatan(e.target.value)}
-                    rows={4}
-                    disabled={isJurnalLocked}
-                    placeholder="Contoh: Siswa sudah memahami materi dasar."
-                    className="w-full resize-none rounded-[24px] border border-[#DDE9DB] bg-[#FAFCF9] px-4 py-3 text-sm font-bold leading-6 text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-[#063D27] focus:bg-white focus:ring-4 focus:ring-[#063D27]/10 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="ringkasan"
-                    className="mb-2 block text-xs font-black uppercase tracking-[0.14em] text-slate-400"
-                  >
-                    Ringkasan untuk Orang Tua
-                  </label>
-
-                  <textarea
-                    id="ringkasan"
-                    value={ringkasan}
-                    onChange={(e) => setRingkasan(e.target.value)}
-                    rows={3}
-                    disabled={isJurnalLocked}
-                    placeholder="Ringkasan singkat yang mudah dipahami orang tua."
-                    className="w-full resize-none rounded-[24px] border border-[#DDE9DB] bg-[#FAFCF9] px-4 py-3 text-sm font-bold leading-6 text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-[#063D27] focus:bg-white focus:ring-4 focus:ring-[#063D27]/10 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="foto"
-                    className="mb-2 block text-xs font-black uppercase tracking-[0.14em] text-slate-400"
-                  >
-                    Foto Validasi
-                  </label>
-
-                  <div className="rounded-[24px] border border-dashed border-[#DDE9DB] bg-[#FAFCF9] p-4">
-                    <div className="flex items-start gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white text-[#063D27]">
-                        <ImageIcon className="h-5 w-5" />
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        <input
-                          id="foto"
-                          type="file"
-                          accept="image/*"
-                          disabled={isJurnalLocked}
-                          onChange={(e) =>
-                            setFoto(e.target.files?.[0] ?? null)
-                          }
-                          className="block w-full text-sm font-semibold text-slate-500 file:mr-3 file:rounded-full file:border-0 file:bg-[#063D27] file:px-4 file:py-2 file:text-sm file:font-black file:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                        />
-
-                        <p className="mt-2 text-xs font-semibold leading-5 text-slate-400">
-                          Opsional. Kalau diisi, foto akan muncul di akun orang
-                          tua.
-                        </p>
-
-                        {selectedJurnal?.foto_validasi_url ||
-                        selectedJurnal?.foto_url ? (
-                          <div className="mt-3 overflow-hidden rounded-[18px] border border-[#EEF3EC] bg-white">
-                            <img
-                              src={
-                                selectedJurnal.foto_validasi_url ||
-                                selectedJurnal.foto_url ||
-                                ''
-                              }
-                              alt="Foto validasi jurnal"
-                              className="max-h-[280px] w-full object-contain"
-                            />
-                          </div>
-                        ) : null}
-                      </div>
+                  {locked && (
+                    <div className="mt-4 flex items-start gap-3 rounded-2xl border border-[#DDE9DB] bg-[#F3F8F1] p-4 text-sm text-[#063D27]">
+                      <Lock className="mt-0.5 h-5 w-5 shrink-0" />
+                      <p className="font-black">Jurnal sudah terkunci</p>
                     </div>
-                  </div>
-                </div>
-
-                <details
-                  open={!!selectedSesi}
-                  className="rounded-[24px] border border-[#DDE9DB] bg-[#FAFCF9]"
-                >
-                  <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-4 text-sm font-black text-[#063D27]">
-                    <span className="inline-flex items-center gap-2">
-                      <UsersRound className="h-4 w-4" />
-                      Kehadiran Siswa
-                    </span>
-
-                    <span className="text-xs font-bold text-slate-400">
-                      {selectedSesi?.sesi_siswa?.length ?? 0} siswa
-                    </span>
-                  </summary>
-
-                  <div className="space-y-2 border-t border-[#EEF3EC] p-4">
-                    {!selectedSesi ? (
-                      <p className="text-sm font-bold text-slate-400">
-                        Pilih sesi dulu.
-                      </p>
-                    ) : selectedSesi.sesi_siswa.length === 0 ? (
-                      <p className="text-sm font-bold text-slate-400">
-                        Tidak ada siswa di sesi ini.
-                      </p>
-                    ) : (
-                      selectedSesi.sesi_siswa.map((relasi) => (
-                        <label
-                          key={relasi.id}
-                          className={`flex items-center gap-3 rounded-2xl bg-white px-3 py-2 ${
-                            isJurnalLocked
-                              ? 'cursor-not-allowed opacity-70'
-                              : 'cursor-pointer'
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={hadirIds.includes(relasi.id)}
-                            disabled={isJurnalLocked}
-                            onChange={() => toggleHadir(relasi.id)}
-                            className="h-4 w-4 rounded border-slate-300 accent-[#063D27] disabled:cursor-not-allowed"
-                          />
-
-                          <div>
-                            <p className="text-sm font-bold text-[#063D27]">
-                              {getSiswaName(relasi.siswa)}
-                            </p>
-
-                            <p className="text-xs font-semibold text-slate-400">
-                              {getSiswaKelas(relasi.siswa)}
-                            </p>
-                          </div>
-                        </label>
-                      ))
-                    )}
-                  </div>
-                </details>
-
-                <div className="border-t border-[#EEF3EC] pt-5">
-                  <button
-                    type="submit"
-                    disabled={saving || isJurnalLocked}
-                    className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#063D27] px-5 text-sm font-black text-white transition hover:bg-[#0B5738] disabled:cursor-not-allowed disabled:bg-slate-400"
-                  >
-                    {saving ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Menyimpan...
-                      </>
-                    ) : isJurnalLocked ? (
-                      <>
-                        <LockKeyhole className="h-4 w-4" />
-                        Jurnal Sudah Terkunci
-                      </>
-                    ) : (
-                      <>
-                        <Save className="h-4 w-4" />
-                        Simpan Jurnal
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            </form>
-
-            <aside className="space-y-4">
-              <section className="rounded-[28px] border border-[#DDE9DB] bg-white p-5">
-                <h2 className="text-lg font-black text-[#063D27]">
-                  Jurnal Tersimpan
-                </h2>
-
-                <p className="mt-1 text-sm font-semibold leading-6 text-slate-400">
-                  Sesi yang sudah punya jurnal dan terkunci.
-                </p>
-
-                <div className="mt-4 space-y-2">
-                  {sudahJurnal.length === 0 ? (
-                    <EmptyState text="Belum ada jurnal tersimpan." />
-                  ) : (
-                    sudahJurnal.slice(0, 8).map((sesi) => {
-                      const jurnal = sesi.jurnal?.[0]
-
-                      return (
-                        <button
-                          key={sesi.id}
-                          type="button"
-                          onClick={() => handleSelectSesi(sesi.id)}
-                          className="w-full rounded-[22px] border border-[#EEF3EC] bg-[#FAFCF9] p-4 text-left transition hover:bg-white"
-                        >
-                          <div className="flex items-start gap-3">
-                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#ECFDF3] text-[#027A48]">
-                              <LockKeyhole className="h-5 w-5" />
-                            </div>
-
-                            <div className="min-w-0">
-                              <p className="font-black text-[#063D27]">
-                                {sesi.mapel}
-                              </p>
-
-                              <p className="mt-1 text-xs font-semibold text-slate-400">
-                                {formatTanggalSimple(sesi.tanggal)} ·{' '}
-                                {sesi.jam_mulai?.slice(0, 5) ?? '-'}
-                              </p>
-
-                              <p className="mt-2 line-clamp-2 text-xs font-semibold leading-5 text-slate-500">
-                                {jurnal?.ringkasan ||
-                                  jurnal?.catatan ||
-                                  jurnal?.materi ||
-                                  'Jurnal sudah tersimpan.'}
-                              </p>
-                            </div>
-                          </div>
-                        </button>
-                      )
-                    })
                   )}
                 </div>
-              </section>
-
-              <section className="rounded-[28px] border border-[#DDE9DB] bg-white p-5">
-                <h2 className="text-lg font-black text-[#063D27]">
-                  Catatan
-                </h2>
-
-                <p className="mt-2 text-sm font-semibold leading-7 text-slate-500">
-                  Tentor hanya bisa menyimpan jurnal satu kali. Setelah
-                  tersimpan, jurnal dikunci agar data yang diterima admin dan
-                  orang tua tidak berubah.
-                </p>
-              </section>
+              )}
             </aside>
-          </section>
+
+            <section className="space-y-5">
+              {selectedSession && (
+                <>
+                  <div className="rounded-[28px] border border-[#DDE9DB] bg-white p-5">
+                    <div className="flex items-center gap-3">
+                      <Camera className="h-5 w-5 text-[#0B5738]" />
+                      <h2 className="text-base font-black text-[#063D27]">Foto kelas</h2>
+                    </div>
+
+                    {fotoLama ? (
+                      <div className="mt-4 overflow-hidden rounded-[22px] border border-[#DDE9DB] bg-[#F8FAF7]">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={fotoLama}
+                          alt="Foto kelas"
+                          className="max-h-[360px] w-full object-cover"
+                        />
+                      </div>
+                    ) : (
+                      <label className="mt-4 flex cursor-pointer flex-col items-center justify-center rounded-[24px] border border-dashed border-[#BFD2BE] bg-[#F8FAF7] px-5 py-8 text-center">
+                        <ImageIcon className="h-8 w-8 text-[#0B5738]" />
+                        <p className="mt-3 text-sm font-black text-[#063D27]">
+                          Upload foto
+                        </p>
+
+                        <input
+                          type="file"
+                          accept="image/*"
+                          disabled={locked || saving}
+                          onChange={handleFotoChange}
+                          className="hidden"
+                        />
+
+                        {foto && (
+                          <span className="mt-3 rounded-full bg-[#FFF8E6] px-3 py-1 text-xs font-black text-[#8A5C00]">
+                            {foto.name}
+                          </span>
+                        )}
+                      </label>
+                    )}
+                  </div>
+
+                  <div className="space-y-4">
+                    {selectedStudents.map((row, index) => {
+                      const siswa = one(row.siswa)
+                      const form = forms[row.id]
+
+                      return (
+                        <details
+                          key={row.id}
+                          open={index === 0}
+                          className="rounded-[28px] border border-[#DDE9DB] bg-white p-5"
+                        >
+                          <summary className="flex cursor-pointer list-none items-center justify-between gap-4">
+                            <div className="flex items-center gap-3">
+                              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#F3F8F1] text-[#063D27]">
+                                <UserRound className="h-5 w-5" />
+                              </div>
+
+                              <div>
+                                <h3 className="font-black text-[#063D27]">
+                                  {siswa?.nama || 'Murid'}
+                                </h3>
+                                <p className="text-xs font-semibold text-[#52645A]">
+                                  {siswa?.kelas || '-'} · {siswa?.sekolah || '-'}
+                                </p>
+                              </div>
+                            </div>
+
+                            <ChevronDown className="h-5 w-5 text-[#52645A]" />
+                          </summary>
+
+                          <div className="mt-5 space-y-4">
+                            <label className="flex items-center gap-3 rounded-2xl border border-[#DDE9DB] bg-[#F8FAF7] px-4 py-3 text-sm font-black text-[#063D27]">
+                              <input
+                                type="checkbox"
+                                checked={form?.hadir ?? true}
+                                disabled={locked || saving}
+                                onChange={(event) =>
+                                  updateForm(row.id, 'hadir', event.target.checked)
+                                }
+                                className="h-4 w-4 accent-[#063D27]"
+                              />
+                              Hadir
+                            </label>
+
+                            <div>
+                              <label className="text-sm font-black text-[#063D27]">
+                                Catatan
+                              </label>
+
+                              <textarea
+                                value={form?.catatan || ''}
+                                onChange={(event) =>
+                                  updateForm(row.id, 'catatan', event.target.value)
+                                }
+                                disabled={locked || saving}
+                                rows={6}
+                                placeholder="Contoh: Hari ini anak belajar pecahan. Anak sudah cukup paham saat menyamakan penyebut, tetapi masih perlu latihan pada soal cerita."
+                                className="mt-2 w-full rounded-2xl border border-[#DDE9DB] bg-[#F8FAF7] px-4 py-3 text-sm leading-6 text-[#063D27] outline-none focus:border-[#063D27] disabled:cursor-not-allowed disabled:opacity-70"
+                              />
+                            </div>
+                          </div>
+                        </details>
+                      )
+                    })}
+                  </div>
+
+                  <div className="sticky bottom-4 rounded-[28px] border border-[#DDE9DB] bg-white/95 p-4 shadow-sm backdrop-blur">
+                    <button
+                      type="submit"
+                      disabled={locked || saving}
+                      className="flex w-full items-center justify-center gap-2 rounded-full bg-[#063D27] px-5 py-3 text-sm font-black text-white transition hover:bg-[#0B5738] disabled:cursor-not-allowed disabled:bg-[#B8C9B8]"
+                    >
+                      {saving ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Menyimpan...
+                        </>
+                      ) : locked ? (
+                        <>
+                          <Lock className="h-4 w-4" />
+                          Terkunci
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="h-4 w-4" />
+                          Simpan
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </>
+              )}
+            </section>
+          </form>
         )}
-      </div>
+      </section>
     </main>
-  )
-}
-
-function SmallCard({
-  title,
-  value,
-  desc,
-  icon,
-}: {
-  title: string
-  value: string
-  desc: string
-  icon: React.ReactNode
-}) {
-  return (
-    <div className="rounded-[26px] border border-[#DDE9DB] bg-white p-5">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">
-            {title}
-          </p>
-
-          <p className="mt-2 text-3xl font-black text-[#063D27]">{value}</p>
-
-          <p className="mt-1 text-sm font-semibold text-slate-400">{desc}</p>
-        </div>
-
-        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#F3F8F1] text-[#063D27]">
-          {icon}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function EmptyState({ text }: { text: string }) {
-  return (
-    <div className="rounded-[22px] border border-dashed border-[#DDE9DB] bg-[#FAFCF9] px-5 py-8 text-center">
-      <p className="text-sm font-bold text-slate-400">{text}</p>
-    </div>
   )
 }

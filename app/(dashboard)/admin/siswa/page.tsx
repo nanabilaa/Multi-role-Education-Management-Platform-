@@ -1,5 +1,4 @@
-// app/(dashboard)/admin/siswa/page.tsx
-import { createClient } from '@/lib/supabase/server'
+import type { ReactNode } from 'react'
 import Link from 'next/link'
 import {
   CalendarDays,
@@ -15,8 +14,11 @@ import {
   UsersRound,
   XCircle,
 } from 'lucide-react'
-import { formatTanggal } from '@/lib/utils'
+
 import DeleteButton from '@/components/admin/siswa/DeleteButton'
+import GenerateParentAccountsButton from '@/components/admin/siswa/GenerateParentAccountsButton'
+import { createClient } from '@/lib/supabase/server'
+import { formatTanggal } from '@/lib/utils'
 
 interface SearchParams {
   search?: string
@@ -33,63 +35,137 @@ type SiswaRow = {
   alamat: string | null
   aktif: boolean | null
   created_at: string | null
+  ortu_id: string | null
   ortu: {
     full_name: string | null
     phone: string | null
   } | null
 }
 
-const kelasOptions = [
-  'Kelas 7',
-  'Kelas 8',
-  'Kelas 9',
-  'Kelas 10',
-  'Kelas 11',
-  'Kelas 12',
-]
+function compareKelas(
+  a: string,
+  b: string,
+) {
+  const numberA = Number(
+    a.match(/\d+/)?.[0] ??
+      Number.MAX_SAFE_INTEGER,
+  )
+
+  const numberB = Number(
+    b.match(/\d+/)?.[0] ??
+      Number.MAX_SAFE_INTEGER,
+  )
+
+  if (numberA !== numberB) {
+    return numberA - numberB
+  }
+
+  return a.localeCompare(b, 'id', {
+    numeric: true,
+    sensitivity: 'base',
+  })
+}
 
 export default async function SiswaPage({
   searchParams,
 }: {
-  searchParams?: SearchParams | Promise<SearchParams>
+  searchParams?:
+    | SearchParams
+    | Promise<SearchParams>
 }) {
-  const params = (await searchParams) ?? {}
-  const supabase = await createClient()
+  const params =
+    (await searchParams) ?? {}
+
+  const supabase =
+    await createClient()
 
   let query = supabase
     .from('siswa')
-    .select('*, ortu:profiles(full_name, phone)')
-    .order('nama', { ascending: true })
+    .select(
+      `
+        id,
+        nama,
+        kelas,
+        sekolah,
+        tanggal_lahir,
+        alamat,
+        aktif,
+        created_at,
+        ortu_id,
+        ortu:profiles (
+          full_name,
+          phone
+        )
+      `,
+    )
+    .order('nama', {
+      ascending: true,
+    })
 
-  if (params.search) {
-    query = query.ilike('nama', `%${params.search}%`)
+  const search =
+    params.search?.trim()
+
+  const selectedKelas =
+    params.kelas?.trim()
+
+  if (search) {
+    query = query.ilike(
+      'nama',
+      `%${search}%`,
+    )
   }
 
-  if (params.kelas) {
-    query = query.eq('kelas', params.kelas)
+  if (selectedKelas) {
+    query = query.eq(
+      'kelas',
+      selectedKelas,
+    )
   }
 
   if (params.status === 'aktif') {
-    query = query.eq('aktif', true)
+    query = query.eq(
+      'aktif',
+      true,
+    )
   }
 
-  if (params.status === 'nonaktif') {
-    query = query.eq('aktif', false)
+  if (
+    params.status === 'nonaktif'
+  ) {
+    query = query.eq(
+      'aktif',
+      false,
+    )
   }
 
-  const { data, error } = await query
-  const siswaList = (data ?? []) as SiswaRow[]
+  const [
+    filteredResult,
+    kelasResult,
+    parentAccountCountResult,
+  ] = await Promise.all([
+    query,
 
-  const totalSiswa = siswaList.length
-  const totalAktif = siswaList.filter((siswa) => siswa.aktif).length
-  const totalNonaktif = siswaList.filter((siswa) => !siswa.aktif).length
-  const totalKelas = new Set(
-    siswaList
-      .map((siswa) => siswa.kelas)
-      .filter(Boolean)
-  ).size
+    supabase
+      .from('siswa')
+      .select('kelas')
+      .not('kelas', 'is', null),
 
-  if (error) {
+    supabase
+      .from('siswa')
+      .select('id', {
+        count: 'exact',
+        head: true,
+      })
+      .eq('aktif', true)
+      .is('ortu_id', null),
+  ])
+
+  const pageError =
+    filteredResult.error ??
+    kelasResult.error ??
+    parentAccountCountResult.error
+
+  if (pageError) {
     return (
       <main className="min-h-screen bg-[#F8FAF7] px-4 py-5 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl">
@@ -103,13 +179,61 @@ export default async function SiswaPage({
             </h1>
 
             <p className="mt-2 text-sm font-semibold leading-7 text-red-600">
-              {error.message}
+              {pageError.message}
             </p>
           </section>
         </div>
       </main>
     )
   }
+
+  const siswaList =
+    (filteredResult.data ??
+      []) as unknown as SiswaRow[]
+
+  const kelasOptions =
+    Array.from(
+      new Set(
+        (kelasResult.data ?? [])
+          .map((row) =>
+            row.kelas?.trim(),
+          )
+          .filter(
+            (
+              kelas,
+            ): kelas is string =>
+              Boolean(kelas),
+          ),
+      ),
+    ).sort(compareKelas)
+
+  const parentAccountCandidateCount =
+    parentAccountCountResult.count ??
+    0
+
+  const totalSiswa =
+    siswaList.length
+
+  const totalAktif =
+    siswaList.filter(
+      (siswa) =>
+        Boolean(siswa.aktif),
+    ).length
+
+  const totalNonaktif =
+    siswaList.filter(
+      (siswa) =>
+        !Boolean(siswa.aktif),
+    ).length
+
+  const totalKelas =
+    new Set(
+      siswaList
+        .map((siswa) =>
+          siswa.kelas?.trim(),
+        )
+        .filter(Boolean),
+    ).size
 
   return (
     <main className="min-h-screen bg-[#F8FAF7] px-4 py-5 sm:px-6 lg:px-8">
@@ -127,17 +251,37 @@ export default async function SiswaPage({
               </h1>
 
               <p className="mt-3 max-w-2xl text-sm font-medium leading-7 text-slate-500 sm:text-base">
-                Data murid dibuat lebih rapi, tenang, dan mudah dipindai. Pakai filter kalau datanya mulai banyak.
+                Kelola data siswa,
+                filter kelas, dan akun
+                orang tua dari satu
+                halaman.
+              </p>
+
+              <p className="mt-2 text-xs font-bold text-[#80868B]">
+                {
+                  parentAccountCandidateCount
+                }{' '}
+                siswa aktif belum
+                memiliki akun orang tua.
+                Password awal:{' '}
               </p>
             </div>
 
-            <Link
-              href="/admin/siswa/tambah"
-              className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-[#063D27] px-5 text-sm font-black text-white shadow-sm transition hover:bg-[#0B5738]"
-            >
-              <Plus className="h-4 w-4" />
-              Tambah Siswa
-            </Link>
+            <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-start">
+              <GenerateParentAccountsButton
+                candidateCount={
+                  parentAccountCandidateCount
+                }
+              />
+
+              <Link
+                href="/admin/siswa/tambah"
+                className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-[#063D27] px-5 text-sm font-black text-white shadow-sm transition hover:bg-[#0B5738]"
+              >
+                <Plus className="h-4 w-4" />
+                Tambah Siswa
+              </Link>
+            </div>
           </div>
         </section>
 
@@ -145,29 +289,37 @@ export default async function SiswaPage({
           <StatCard
             title="Total Siswa"
             value={totalSiswa}
-            desc="Sesuai filter saat ini"
-            icon={<GraduationCap className="h-5 w-5" />}
+            description="Sesuai filter saat ini"
+            icon={
+              <GraduationCap className="h-5 w-5" />
+            }
           />
 
           <StatCard
             title="Siswa Aktif"
             value={totalAktif}
-            desc="Masih mengikuti bimbel"
-            icon={<CheckCircle2 className="h-5 w-5" />}
+            description="Masih mengikuti bimbel"
+            icon={
+              <CheckCircle2 className="h-5 w-5" />
+            }
           />
 
           <StatCard
             title="Nonaktif"
             value={totalNonaktif}
-            desc="Tidak aktif sementara"
-            icon={<XCircle className="h-5 w-5" />}
+            description="Tidak aktif sementara"
+            icon={
+              <XCircle className="h-5 w-5" />
+            }
           />
 
           <StatCard
             title="Kelas Terdata"
             value={totalKelas}
-            desc="Dari data yang tampil"
-            icon={<School className="h-5 w-5" />}
+            description="Dari data yang tampil"
+            icon={
+              <School className="h-5 w-5" />
+            }
           />
         </section>
 
@@ -181,15 +333,20 @@ export default async function SiswaPage({
               <h2 className="text-base font-black text-[#063D27]">
                 Filter Siswa
               </h2>
+
               <p className="text-xs font-semibold text-slate-500">
-                Cari nama, kelas, atau status siswa.
+                Cari nama, kelas, atau
+                status siswa.
               </p>
             </div>
           </div>
 
           <form className="grid gap-3 lg:grid-cols-[1fr_190px_170px_auto] lg:items-end">
             <div>
-              <label className="mb-2 block text-xs font-black uppercase tracking-[0.12em] text-slate-400">
+              <label
+                htmlFor="search"
+                className="mb-2 block text-xs font-black uppercase tracking-[0.12em] text-slate-400"
+              >
                 Cari Nama
               </label>
 
@@ -197,8 +354,11 @@ export default async function SiswaPage({
                 <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
 
                 <input
+                  id="search"
                   name="search"
-                  defaultValue={params.search ?? ''}
+                  defaultValue={
+                    params.search ?? ''
+                  }
                   placeholder="Cari nama siswa..."
                   className="h-12 w-full rounded-full border border-[#DDE9DB] bg-[#FAFCF9] pl-11 pr-4 text-sm font-semibold text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-[#063D27] focus:bg-white focus:ring-4 focus:ring-[#063D27]/10"
                 />
@@ -206,37 +366,65 @@ export default async function SiswaPage({
             </div>
 
             <div>
-              <label className="mb-2 block text-xs font-black uppercase tracking-[0.12em] text-slate-400">
+              <label
+                htmlFor="kelas"
+                className="mb-2 block text-xs font-black uppercase tracking-[0.12em] text-slate-400"
+              >
                 Kelas
               </label>
 
               <select
+                id="kelas"
                 name="kelas"
-                defaultValue={params.kelas ?? ''}
+                defaultValue={
+                  params.kelas ?? ''
+                }
                 className="h-12 w-full rounded-full border border-[#DDE9DB] bg-[#FAFCF9] px-4 text-sm font-bold text-slate-700 outline-none transition focus:border-[#063D27] focus:bg-white focus:ring-4 focus:ring-[#063D27]/10"
               >
-                <option value="">Semua Kelas</option>
-                {kelasOptions.map((kelas) => (
-                  <option key={kelas} value={kelas}>
-                    {kelas}
-                  </option>
-                ))}
+                <option value="">
+                  Semua Kelas
+                </option>
+
+                {kelasOptions.map(
+                  (kelas) => (
+                    <option
+                      key={kelas}
+                      value={kelas}
+                    >
+                      {kelas}
+                    </option>
+                  ),
+                )}
               </select>
             </div>
 
             <div>
-              <label className="mb-2 block text-xs font-black uppercase tracking-[0.12em] text-slate-400">
+              <label
+                htmlFor="status"
+                className="mb-2 block text-xs font-black uppercase tracking-[0.12em] text-slate-400"
+              >
                 Status
               </label>
 
               <select
+                id="status"
                 name="status"
-                defaultValue={params.status ?? ''}
+                defaultValue={
+                  params.status ?? ''
+                }
                 className="h-12 w-full rounded-full border border-[#DDE9DB] bg-[#FAFCF9] px-4 text-sm font-bold text-slate-700 outline-none transition focus:border-[#063D27] focus:bg-white focus:ring-4 focus:ring-[#063D27]/10"
               >
-                <option value="">Semua</option>
-                <option value="aktif">Aktif</option>
-                <option value="nonaktif">Nonaktif</option>
+                <option value="">
+                  Semua
+                </option>
+
+                <option value="aktif">
+                  Aktif
+                </option>
+
+                <option value="nonaktif">
+                  Nonaktif
+                </option>
               </select>
             </div>
 
@@ -277,7 +465,8 @@ export default async function SiswaPage({
             </div>
 
             <div className="rounded-full border border-[#E7EFE6] bg-[#FAFCF9] px-4 py-2 text-xs font-black text-slate-500">
-              Klik detail untuk info tambahan
+              Klik detail untuk info
+              tambahan
             </div>
           </div>
 
@@ -285,83 +474,140 @@ export default async function SiswaPage({
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="bg-[#F3F8F1] text-xs uppercase tracking-[0.12em] text-slate-500">
-                  <th className="px-5 py-4 font-black">Nama</th>
-                  <th className="px-5 py-4 font-black">Kelas</th>
-                  <th className="px-5 py-4 font-black">Sekolah</th>
-                  <th className="px-5 py-4 font-black">Orang Tua</th>
-                  <th className="px-5 py-4 font-black">Tanggal Daftar</th>
-                  <th className="px-5 py-4 font-black">Status</th>
-                  <th className="px-5 py-4 text-right font-black">Aksi</th>
+                  <th className="px-5 py-4 font-black">
+                    Nama
+                  </th>
+
+                  <th className="px-5 py-4 font-black">
+                    Kelas
+                  </th>
+
+                  <th className="px-5 py-4 font-black">
+                    Sekolah
+                  </th>
+
+                  <th className="px-5 py-4 font-black">
+                    Orang Tua
+                  </th>
+
+                  <th className="px-5 py-4 font-black">
+                    Tanggal Daftar
+                  </th>
+
+                  <th className="px-5 py-4 font-black">
+                    Status
+                  </th>
+
+                  <th className="px-5 py-4 text-right font-black">
+                    Aksi
+                  </th>
                 </tr>
               </thead>
 
               <tbody className="divide-y divide-[#F1F4F0]">
-                {siswaList.length === 0 ? (
+                {siswaList.length ===
+                0 ? (
                   <tr>
-                    <td colSpan={7} className="px-5 py-12">
+                    <td
+                      colSpan={7}
+                      className="px-5 py-12"
+                    >
                       <EmptyState />
                     </td>
                   </tr>
                 ) : (
-                  siswaList.map((siswa) => (
-                    <tr key={siswa.id} className="transition hover:bg-[#FAFCF9]">
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-3">
-                          <Avatar name={siswa.nama} />
+                  siswaList.map(
+                    (siswa) => (
+                      <tr
+                        key={siswa.id}
+                        className="transition hover:bg-[#FAFCF9]"
+                      >
+                        <td className="px-5 py-4">
+                          <div className="flex items-center gap-3">
+                            <Avatar
+                              name={
+                                siswa.nama
+                              }
+                            />
 
-                          <div className="min-w-0">
-                            <p className="font-black text-slate-800">
-                              {siswa.nama}
-                            </p>
+                            <div className="min-w-0">
+                              <p className="font-black text-slate-800">
+                                {
+                                  siswa.nama
+                                }
+                              </p>
 
-                            <p className="mt-1 text-xs font-semibold text-slate-400">
-                              {siswa.alamat || 'Alamat belum diisi'}
-                            </p>
+                              <p className="mt-1 text-xs font-semibold text-slate-400">
+                                {siswa.alamat ||
+                                  'Alamat belum diisi'}
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                      </td>
+                        </td>
 
-                      <td className="px-5 py-4 font-bold text-slate-600">
-                        {siswa.kelas ?? '-'}
-                      </td>
+                        <td className="px-5 py-4 font-bold text-slate-600">
+                          {siswa.kelas ??
+                            '-'}
+                        </td>
 
-                      <td className="px-5 py-4 font-semibold text-slate-500">
-                        {siswa.sekolah ?? '-'}
-                      </td>
+                        <td className="px-5 py-4 font-semibold text-slate-500">
+                          {siswa.sekolah ??
+                            '-'}
+                        </td>
 
-                      <td className="px-5 py-4">
-                        <p className="font-bold text-slate-700">
-                          {siswa.ortu?.full_name ?? '-'}
-                        </p>
+                        <td className="px-5 py-4">
+                          <p className="font-bold text-slate-700">
+                            {siswa.ortu
+                              ?.full_name ??
+                              '-'}
+                          </p>
 
-                        <p className="mt-1 text-xs font-semibold text-slate-400">
-                          {siswa.ortu?.phone ?? '-'}
-                        </p>
-                      </td>
+                          <p className="mt-1 text-xs font-semibold text-slate-400">
+                            {siswa.ortu
+                              ?.phone ??
+                              '-'}
+                          </p>
+                        </td>
 
-                      <td className="px-5 py-4 font-semibold text-slate-500">
-                        {siswa.created_at ? formatTanggal(siswa.created_at) : '-'}
-                      </td>
+                        <td className="px-5 py-4 font-semibold text-slate-500">
+                          {siswa.created_at
+                            ? formatTanggal(
+                                siswa.created_at,
+                              )
+                            : '-'}
+                        </td>
 
-                      <td className="px-5 py-4">
-                        <StatusBadge aktif={Boolean(siswa.aktif)} />
-                      </td>
+                        <td className="px-5 py-4">
+                          <StatusBadge
+                            aktif={Boolean(
+                              siswa.aktif,
+                            )}
+                          />
+                        </td>
 
-                      <td className="px-5 py-4">
-                        <div className="flex justify-end gap-2">
-                          <Link
-                            href={`/admin/siswa/${siswa.id}`}
-                            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-full border border-[#DDE9DB] bg-white px-3 text-xs font-black text-[#063D27] transition hover:bg-[#F3F8F1]"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                            Edit
-                          </Link>
+                        <td className="px-5 py-4">
+                          <div className="flex justify-end gap-2">
+                            <Link
+                              href={`/admin/siswa/${siswa.id}`}
+                              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-full border border-[#DDE9DB] bg-white px-3 text-xs font-black text-[#063D27] transition hover:bg-[#F3F8F1]"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                              Edit
+                            </Link>
 
-                          <DeleteButton id={siswa.id} nama={siswa.nama} />
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                            <DeleteButton
+                              id={
+                                siswa.id
+                              }
+                              nama={
+                                siswa.nama
+                              }
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    ),
+                  )
                 )}
               </tbody>
             </table>
@@ -371,69 +617,107 @@ export default async function SiswaPage({
             {siswaList.length === 0 ? (
               <EmptyState />
             ) : (
-              siswaList.map((siswa) => (
-                <article
-                  key={siswa.id}
-                  className="rounded-[24px] border border-[#EEF3EC] bg-[#FAFCF9] p-4"
-                >
-                  <div className="flex items-start gap-3">
-                    <Avatar name={siswa.nama} />
+              siswaList.map(
+                (siswa) => (
+                  <article
+                    key={siswa.id}
+                    className="rounded-[24px] border border-[#EEF3EC] bg-[#FAFCF9] p-4"
+                  >
+                    <div className="flex items-start gap-3">
+                      <Avatar
+                        name={siswa.nama}
+                      />
 
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="font-black text-slate-800">
-                          {siswa.nama}
-                        </h3>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="font-black text-slate-800">
+                            {siswa.nama}
+                          </h3>
 
-                        <StatusBadge aktif={Boolean(siswa.aktif)} />
+                          <StatusBadge
+                            aktif={Boolean(
+                              siswa.aktif,
+                            )}
+                          />
+                        </div>
+
+                        <p className="mt-1 text-sm font-bold text-slate-500">
+                          {siswa.kelas ??
+                            '-'}{' '}
+                          ·{' '}
+                          {siswa.sekolah ??
+                            '-'}
+                        </p>
                       </div>
-
-                      <p className="mt-1 text-sm font-bold text-slate-500">
-                        {siswa.kelas ?? '-'} · {siswa.sekolah ?? '-'}
-                      </p>
                     </div>
-                  </div>
 
-                  <details className="mt-4 group">
-                    <summary className="cursor-pointer rounded-2xl border border-[#E7EFE6] bg-white px-4 py-3 text-sm font-black text-[#063D27] outline-none transition group-open:bg-[#F3F8F1]">
-                      Detail siswa
-                    </summary>
+                    <details className="group mt-4">
+                      <summary className="cursor-pointer rounded-2xl border border-[#E7EFE6] bg-white px-4 py-3 text-sm font-black text-[#063D27] outline-none transition group-open:bg-[#F3F8F1]">
+                        Detail siswa
+                      </summary>
 
-                    <div className="mt-3 grid gap-3 rounded-2xl border border-[#EEF3EC] bg-white p-4 text-sm">
-                      <InfoRow
-                        icon={<UserRound className="h-4 w-4" />}
-                        label="Orang tua"
-                        value={siswa.ortu?.full_name ?? '-'}
-                        sub={siswa.ortu?.phone ?? '-'}
-                      />
+                      <div className="mt-3 grid gap-3 rounded-2xl border border-[#EEF3EC] bg-white p-4 text-sm">
+                        <InfoRow
+                          icon={
+                            <UserRound className="h-4 w-4" />
+                          }
+                          label="Orang tua"
+                          value={
+                            siswa.ortu
+                              ?.full_name ??
+                            '-'
+                          }
+                          sub={
+                            siswa.ortu
+                              ?.phone ??
+                            '-'
+                          }
+                        />
 
-                      <InfoRow
-                        icon={<CalendarDays className="h-4 w-4" />}
-                        label="Tanggal daftar"
-                        value={siswa.created_at ? formatTanggal(siswa.created_at) : '-'}
-                      />
+                        <InfoRow
+                          icon={
+                            <CalendarDays className="h-4 w-4" />
+                          }
+                          label="Tanggal daftar"
+                          value={
+                            siswa.created_at
+                              ? formatTanggal(
+                                  siswa.created_at,
+                                )
+                              : '-'
+                          }
+                        />
 
-                      <InfoRow
-                        icon={<School className="h-4 w-4" />}
-                        label="Alamat"
-                        value={siswa.alamat ?? '-'}
+                        <InfoRow
+                          icon={
+                            <School className="h-4 w-4" />
+                          }
+                          label="Alamat"
+                          value={
+                            siswa.alamat ??
+                            '-'
+                          }
+                        />
+                      </div>
+                    </details>
+
+                    <div className="mt-4 flex gap-2">
+                      <Link
+                        href={`/admin/siswa/${siswa.id}`}
+                        className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-full bg-[#063D27] text-sm font-black text-white transition hover:bg-[#0B5738]"
+                      >
+                        <Pencil className="h-4 w-4" />
+                        Edit
+                      </Link>
+
+                      <DeleteButton
+                        id={siswa.id}
+                        nama={siswa.nama}
                       />
                     </div>
-                  </details>
-
-                  <div className="mt-4 flex gap-2">
-                    <Link
-                      href={`/admin/siswa/${siswa.id}`}
-                      className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-full bg-[#063D27] text-sm font-black text-white transition hover:bg-[#0B5738]"
-                    >
-                      <Pencil className="h-4 w-4" />
-                      Edit
-                    </Link>
-
-                    <DeleteButton id={siswa.id} nama={siswa.nama} />
-                  </div>
-                </article>
-              ))
+                  </article>
+                ),
+              )
             )}
           </div>
         </section>
@@ -445,16 +729,16 @@ export default async function SiswaPage({
 function StatCard({
   title,
   value,
-  desc,
+  description,
   icon,
 }: {
   title: string
   value: number
-  desc: string
-  icon: React.ReactNode
+  description: string
+  icon: ReactNode
 }) {
   return (
-    <div className="rounded-[26px] border border-[#E7EFE6] bg-white p-5">
+    <article className="rounded-[26px] border border-[#E7EFE6] bg-white p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-400">
@@ -466,7 +750,7 @@ function StatCard({
           </h2>
 
           <p className="mt-1 text-sm font-semibold text-slate-500">
-            {desc}
+            {description}
           </p>
         </div>
 
@@ -474,11 +758,15 @@ function StatCard({
           {icon}
         </div>
       </div>
-    </div>
+    </article>
   )
 }
 
-function Avatar({ name }: { name: string }) {
+function Avatar({
+  name,
+}: {
+  name: string
+}) {
   return (
     <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#FFF8E6] text-sm font-black text-[#063D27] ring-1 ring-[#F0E5BE]">
       {getInitials(name)}
@@ -486,7 +774,11 @@ function Avatar({ name }: { name: string }) {
   )
 }
 
-function StatusBadge({ aktif }: { aktif: boolean }) {
+function StatusBadge({
+  aktif,
+}: {
+  aktif: boolean
+}) {
   if (aktif) {
     return (
       <span className="inline-flex items-center gap-1.5 rounded-full bg-[#ECFDF3] px-3 py-1 text-xs font-black text-[#027A48]">
@@ -510,7 +802,7 @@ function InfoRow({
   value,
   sub,
 }: {
-  icon: React.ReactNode
+  icon: ReactNode
   label: string
   value: string
   sub?: string
@@ -552,7 +844,9 @@ function EmptyState() {
       </h3>
 
       <p className="mx-auto mt-2 max-w-md text-sm font-medium leading-6 text-slate-500">
-        Tambahkan siswa baru atau ubah filter pencarian kalau data belum muncul.
+        Tambahkan siswa baru atau
+        ubah filter kalau data belum
+        muncul.
       </p>
 
       <Link
@@ -566,8 +860,12 @@ function EmptyState() {
   )
 }
 
-function getInitials(name?: string | null) {
-  if (!name) return '?'
+function getInitials(
+  name?: string | null,
+) {
+  if (!name) {
+    return '?'
+  }
 
   return name
     .split(' ')
