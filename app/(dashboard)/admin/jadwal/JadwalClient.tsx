@@ -12,6 +12,7 @@ interface Props {
   siswaList: Pick<Siswa, 'id' | 'nama' | 'kelas'>[]
 }
 
+
 export default function JadwalClient({ tentorList, siswaList }: Props) {
   const supabase = createClient()
   const [sesiList, setSesiList] = useState<any[]>([])

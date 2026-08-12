@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useMemo, useState, useEffect, type ReactNode } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
   AlertTriangle,
@@ -8,6 +8,8 @@ import {
   Building2,
   CheckCircle2,
   Edit3,
+  Eye,
+  EyeOff,
   KeyRound,
   Loader2,
   Mail,
@@ -58,12 +60,14 @@ type TentorForm = {
   catatan: string
 }
 
+type MessageType = 'success' | 'error' | 'info'
+
 const defaultBusinessSettings: BusinessSettings = {
   name: 'Bimbingan Belajar CBS Salaman',
   address: 'Jl. Diponegoro No. 28 Gadean Salaman, Magelang',
   phone: '0813-9219-2401',
   email: 'bimbinganbelajarbcssalaman@gmail.com',
-  logo_url: '',
+  logo_url: '/images/logo bimbel.jpg',
 }
 
 const emptyTentorForm: TentorForm = {
@@ -74,12 +78,44 @@ const emptyTentorForm: TentorForm = {
   catatan: '',
 }
 
+function normalizeBusinessSettings(value: unknown): BusinessSettings {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return defaultBusinessSettings
+  }
+
+  const raw = value as Partial<BusinessSettings>
+
+  return {
+    name: typeof raw.name === 'string' && raw.name.trim()
+      ? raw.name
+      : defaultBusinessSettings.name,
+    address: typeof raw.address === 'string'
+      ? raw.address
+      : defaultBusinessSettings.address,
+    phone: typeof raw.phone === 'string'
+      ? raw.phone
+      : defaultBusinessSettings.phone,
+    email: typeof raw.email === 'string'
+      ? raw.email
+      : defaultBusinessSettings.email,
+    logo_url: typeof raw.logo_url === 'string' && raw.logo_url.trim()
+      ? raw.logo_url
+      : defaultBusinessSettings.logo_url,
+  }
+}
+
+function isValidEmail(value: string) {
+  if (!value.trim()) return true
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
+}
+
 export default function AdminSettingsPage() {
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
+  const [messageType, setMessageType] = useState<MessageType>('info')
 
   const [userEmail, setUserEmail] = useState('')
   const [profile, setProfile] = useState<ProfileRow | null>(null)
@@ -95,6 +131,10 @@ export default function AdminSettingsPage() {
   const [tentorForm, setTentorForm] = useState<TentorForm>(emptyTentorForm)
   const [editingTentorId, setEditingTentorId] = useState<string | null>(null)
 
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+
   const activeTentors = useMemo(() => {
     return tentors.filter((tentor) => tentor.aktif).length
   }, [tentors])
@@ -103,195 +143,269 @@ export default function AdminSettingsPage() {
     return tentors.filter((tentor) => !tentor.aktif).length
   }, [tentors])
 
-  async function getCurrentUser() {
+  const showMessage = useCallback(
+    (text: string, type: MessageType = 'info') => {
+      setMessage(text)
+      setMessageType(type)
+    },
+    []
+  )
+
+  const getCurrentUser = useCallback(async () => {
     const {
       data: { user },
+      error,
     } = await supabase.auth.getUser()
 
+    if (error) {
+      throw new Error(error.message)
+    }
+
     return user
-  }
+  }, [supabase])
 
-  async function loadData() {
-    setLoading(true)
-    setMessage('')
+  const loadData = useCallback(
+    async (options?: { silent?: boolean }) => {
+      const silent = options?.silent ?? false
 
-    const user = await getCurrentUser()
+      if (!silent) {
+        setLoading(true)
+        setMessage('')
+      }
 
-    if (!user) {
-      setMessage('User belum login.')
-      setLoading(false)
-      return
-    }
+      try {
+        const user = await getCurrentUser()
 
-    setUserEmail(user.email || '')
+        if (!user) {
+          showMessage('User belum login.', 'error')
+          return
+        }
 
-    const [profileRes, settingsRes, tentorRes] = await Promise.all([
-      supabase
-        .from('profiles')
-        .select('id, full_name, role, phone')
-        .eq('id', user.id)
-        .single(),
+        setUserEmail(user.email || '')
 
-      supabase.from('app_settings').select('key, value'),
+        const [profileRes, settingsRes, tentorRes] = await Promise.all([
+          supabase
+            .from('profiles')
+            .select('id, full_name, role, phone')
+            .eq('id', user.id)
+            .single(),
 
-      supabase
-        .from('tentor_members')
-        .select(
-          'id, nama, phone, email, mapel, aktif, catatan, created_at, updated_at'
+          supabase.from('app_settings').select('key, value'),
+
+          supabase
+            .from('tentor_members')
+            .select(
+              'id, nama, phone, email, mapel, aktif, catatan, created_at, updated_at'
+            )
+            .order('created_at', { ascending: false }),
+        ])
+
+        const errors: string[] = []
+
+        if (profileRes.error) {
+          errors.push(`Profil: ${profileRes.error.message}`)
+        } else if (profileRes.data) {
+          const profileData = profileRes.data as ProfileRow
+          setProfile(profileData)
+          setAdminName(profileData.full_name || '')
+          setAdminPhone(profileData.phone || '')
+        }
+
+        if (settingsRes.error) {
+          errors.push(`Pengaturan bimbel: ${settingsRes.error.message}`)
+        } else {
+          const rows = settingsRes.data || []
+          const businessRow = rows.find((row) => row.key === 'business')
+          setBusiness(normalizeBusinessSettings(businessRow?.value))
+        }
+
+        if (tentorRes.error) {
+          errors.push(`Tentor: ${tentorRes.error.message}`)
+        } else {
+          setTentors((tentorRes.data || []) as TentorMember[])
+        }
+
+        if (errors.length > 0) {
+          showMessage(errors.join(' | '), 'error')
+        }
+      } catch (error) {
+        showMessage(
+          error instanceof Error ? error.message : 'Gagal memuat data.',
+          'error'
         )
-        .order('created_at', { ascending: false }),
-    ])
-
-    if (profileRes.error) {
-      setMessage(profileRes.error.message)
-    } else {
-      const profileData = profileRes.data as ProfileRow
-      setProfile(profileData)
-      setAdminName(profileData.full_name || '')
-      setAdminPhone(profileData.phone || '')
-    }
-
-    if (settingsRes.error) {
-      setMessage(settingsRes.error.message)
-    } else {
-      const rows = settingsRes.data || []
-      const businessRow = rows.find((row) => row.key === 'business')
-
-      setBusiness({
-        ...defaultBusinessSettings,
-        ...(businessRow?.value as Partial<BusinessSettings> | undefined),
-      })
-    }
-
-    if (tentorRes.error) {
-      setMessage(tentorRes.error.message)
-    } else {
-      setTentors((tentorRes.data || []) as TentorMember[])
-    }
-
-    setLoading(false)
-  }
+      } finally {
+        if (!silent) {
+          setLoading(false)
+        }
+      }
+    },
+    [getCurrentUser, showMessage, supabase]
+  )
 
   useEffect(() => {
-    loadData()
-  }, [])
+    void loadData()
+  }, [loadData])
 
   async function saveProfile(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
 
+    if (!adminName.trim()) {
+      showMessage('Nama admin wajib diisi.', 'error')
+      return
+    }
+
     setSaving(true)
     setMessage('')
 
-    const user = await getCurrentUser()
+    try {
+      const user = await getCurrentUser()
 
-    if (!user) {
-      setMessage('User belum login.')
+      if (!user) {
+        showMessage('User belum login.', 'error')
+        return
+      }
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          full_name: adminName.trim(),
+          phone: adminPhone.trim() || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', user.id)
+
+      if (error) throw new Error(error.message)
+
+      await loadData({ silent: true })
+      showMessage('Profil admin berhasil disimpan.', 'success')
+    } catch (error) {
+      showMessage(
+        error instanceof Error ? error.message : 'Gagal menyimpan profil.',
+        'error'
+      )
+    } finally {
       setSaving(false)
-      return
     }
-
-    const { error } = await supabase
-      .from('profiles')
-      .update({
-        full_name: adminName,
-        phone: adminPhone || null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', user.id)
-
-    if (error) {
-      setMessage(error.message)
-      setSaving(false)
-      return
-    }
-
-    setMessage('Profil admin berhasil disimpan.')
-    setSaving(false)
-    await loadData()
   }
 
   async function saveBusinessSettings(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
 
-    setSaving(true)
-    setMessage('')
-
-    const user = await getCurrentUser()
-
-    const { error } = await supabase.from('app_settings').upsert(
-      {
-        key: 'business',
-        value: business,
-        updated_by: user?.id ?? null,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'key' }
-    )
-
-    if (error) {
-      setMessage(error.message)
-      setSaving(false)
+    if (!business.name.trim()) {
+      showMessage('Nama bimbel wajib diisi.', 'error')
       return
     }
 
-    setMessage('Pengaturan bimbel berhasil disimpan.')
-    setSaving(false)
-    await loadData()
+    if (business.email && !isValidEmail(business.email)) {
+      showMessage('Format email bimbel tidak valid.', 'error')
+      return
+    }
+
+    setSaving(true)
+    setMessage('')
+
+    try {
+      const user = await getCurrentUser()
+
+      if (!user) {
+        showMessage('User belum login.', 'error')
+        return
+      }
+
+      const payload: BusinessSettings = {
+        name: business.name.trim(),
+        address: business.address.trim(),
+        phone: business.phone.trim(),
+        email: business.email.trim(),
+        logo_url:
+          business.logo_url.trim() || defaultBusinessSettings.logo_url,
+      }
+
+      const { error } = await supabase.from('app_settings').upsert(
+        {
+          key: 'business',
+          value: payload,
+          updated_by: user.id,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'key' }
+      )
+
+      if (error) throw new Error(error.message)
+
+      setBusiness(payload)
+      await loadData({ silent: true })
+      showMessage('Pengaturan bimbel berhasil disimpan.', 'success')
+    } catch (error) {
+      showMessage(
+        error instanceof Error
+          ? error.message
+          : 'Gagal menyimpan pengaturan bimbel.',
+        'error'
+      )
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function saveTentor(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
 
-    setSaving(true)
-    setMessage('')
-
     if (!tentorForm.nama.trim()) {
-      setMessage('Nama tentor wajib diisi.')
-      setSaving(false)
+      showMessage('Nama tentor wajib diisi.', 'error')
       return
     }
 
-    const payload = {
-      nama: tentorForm.nama.trim(),
-      phone: tentorForm.phone.trim() || null,
-      email: tentorForm.email.trim() || null,
-      mapel: tentorForm.mapel.trim() || null,
-      catatan: tentorForm.catatan.trim() || null,
-      updated_at: new Date().toISOString(),
+    if (!isValidEmail(tentorForm.email)) {
+      showMessage('Format email tentor tidak valid.', 'error')
+      return
     }
 
-    if (editingTentorId) {
-      const { error } = await supabase
-        .from('tentor_members')
-        .update(payload)
-        .eq('id', editingTentorId)
+    setSaving(true)
+    setMessage('')
 
-      if (error) {
-        setMessage(error.message)
-        setSaving(false)
-        return
+    try {
+      const payload = {
+        nama: tentorForm.nama.trim(),
+        phone: tentorForm.phone.trim() || null,
+        email: tentorForm.email.trim() || null,
+        mapel: tentorForm.mapel.trim() || null,
+        catatan: tentorForm.catatan.trim() || null,
+        updated_at: new Date().toISOString(),
       }
 
-      setMessage('Data tentor berhasil diperbarui.')
-    } else {
-      const { error } = await supabase.from('tentor_members').insert({
-        ...payload,
-        aktif: true,
-      })
+      if (editingTentorId) {
+        const { error } = await supabase
+          .from('tentor_members')
+          .update(payload)
+          .eq('id', editingTentorId)
 
-      if (error) {
-        setMessage(error.message)
-        setSaving(false)
-        return
+        if (error) throw new Error(error.message)
+
+        setTentorForm(emptyTentorForm)
+        setEditingTentorId(null)
+        await loadData({ silent: true })
+        showMessage('Data tentor berhasil diperbarui.', 'success')
+      } else {
+        const { error } = await supabase.from('tentor_members').insert({
+          ...payload,
+          aktif: true,
+        })
+
+        if (error) throw new Error(error.message)
+
+        setTentorForm(emptyTentorForm)
+        await loadData({ silent: true })
+        showMessage('Tentor baru berhasil ditambahkan.', 'success')
       }
-
-      setMessage('Tentor baru berhasil ditambahkan.')
+    } catch (error) {
+      showMessage(
+        error instanceof Error ? error.message : 'Gagal menyimpan tentor.',
+        'error'
+      )
+    } finally {
+      setSaving(false)
     }
-
-    setTentorForm(emptyTentorForm)
-    setEditingTentorId(null)
-    setSaving(false)
-    await loadData()
   }
 
   function startEditTentor(tentor: TentorMember) {
@@ -303,8 +417,13 @@ export default function AdminSettingsPage() {
       mapel: tentor.mapel || '',
       catatan: tentor.catatan || '',
     })
+    setMessage('')
 
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    requestAnimationFrame(() => {
+      document
+        .getElementById('form-tentor')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
   }
 
   function cancelEditTentor() {
@@ -317,33 +436,37 @@ export default function AdminSettingsPage() {
     setSaving(true)
     setMessage('')
 
-    const { error } = await supabase
-      .from('tentor_members')
-      .update({
-        aktif: !tentor.aktif,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', tentor.id)
+    try {
+      const { error } = await supabase
+        .from('tentor_members')
+        .update({
+          aktif: !tentor.aktif,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', tentor.id)
 
-    if (error) {
-      setMessage(error.message)
+      if (error) throw new Error(error.message)
+
+      await loadData({ silent: true })
+      showMessage(
+        tentor.aktif
+          ? 'Tentor berhasil dinonaktifkan.'
+          : 'Tentor berhasil diaktifkan.',
+        'success'
+      )
+    } catch (error) {
+      showMessage(
+        error instanceof Error ? error.message : 'Gagal mengubah status tentor.',
+        'error'
+      )
+    } finally {
       setSaving(false)
-      return
     }
-
-    setMessage(
-      tentor.aktif
-        ? 'Tentor berhasil dinonaktifkan.'
-        : 'Tentor berhasil diaktifkan.'
-    )
-
-    setSaving(false)
-    await loadData()
   }
 
   async function deleteTentor(tentor: TentorMember) {
     const confirmDelete = window.confirm(
-      `Hapus tentor "${tentor.nama}"? Data ini akan hilang dari daftar anggota tentor.`
+      `Hapus tentor "${tentor.nama}"? Data ini akan hilang dari daftar tentor.`
     )
 
     if (!confirmDelete) return
@@ -351,186 +474,221 @@ export default function AdminSettingsPage() {
     setSaving(true)
     setMessage('')
 
-    const { error } = await supabase
-      .from('tentor_members')
-      .delete()
-      .eq('id', tentor.id)
+    try {
+      const { error } = await supabase
+        .from('tentor_members')
+        .delete()
+        .eq('id', tentor.id)
 
-    if (error) {
-      setMessage(error.message)
+      if (error) throw new Error(error.message)
+
+      if (editingTentorId === tentor.id) {
+        setEditingTentorId(null)
+        setTentorForm(emptyTentorForm)
+      }
+
+      await loadData({ silent: true })
+      showMessage('Tentor berhasil dihapus.', 'success')
+    } catch (error) {
+      showMessage(
+        error instanceof Error ? error.message : 'Gagal menghapus tentor.',
+        'error'
+      )
+    } finally {
       setSaving(false)
+    }
+  }
+
+  async function changePassword(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+
+    if (newPassword.length < 8) {
+      showMessage('Password minimal 8 karakter.', 'error')
       return
     }
 
-    if (editingTentorId === tentor.id) {
-      setEditingTentorId(null)
-      setTentorForm(emptyTentorForm)
+    if (newPassword !== confirmPassword) {
+      showMessage('Konfirmasi password tidak sama.', 'error')
+      return
     }
 
-    setMessage('Tentor berhasil dihapus.')
-    setSaving(false)
-    await loadData()
-  }
-
-  async function sendResetPasswordEmail() {
     setSaving(true)
     setMessage('')
 
-    if (!userEmail) {
-      setMessage('Email admin tidak ditemukan.')
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword,
+      })
+
+      if (error) throw new Error(error.message)
+
+      setNewPassword('')
+      setConfirmPassword('')
+      showMessage('Password admin berhasil diperbarui.', 'success')
+    } catch (error) {
+      showMessage(
+        error instanceof Error ? error.message : 'Gagal memperbarui password.',
+        'error'
+      )
+    } finally {
       setSaving(false)
-      return
     }
-
-    const { error } = await supabase.auth.resetPasswordForEmail(userEmail)
-
-    if (error) {
-      setMessage(error.message)
-      setSaving(false)
-      return
-    }
-
-    setMessage(`Link reset password sudah dikirim ke ${userEmail}.`)
-    setSaving(false)
   }
 
   function resetLocalCache() {
     const confirmReset = window.confirm(
-      'Reset cache lokal browser? Ini tidak menghapus data database.'
+      'Hapus cache lokal browser? Data database tidak akan terhapus.'
     )
 
     if (!confirmReset) return
 
     localStorage.clear()
     sessionStorage.clear()
-    setMessage('Cache lokal browser berhasil direset.')
+    showMessage('Cache lokal browser berhasil dihapus.', 'success')
   }
 
   async function resetAllAppData() {
     const confirm1 = window.confirm(
-      'PERINGATAN BESAR! Ini akan menghapus data operasional: jadwal, jurnal, SPP, invoice, transaksi dana, honor, anggota tentor, dan pengaturan. Data siswa, akun admin, dan akun user TIDAK dihapus. Lanjutkan?'
+      'PERINGATAN: Data operasional akan dihapus. Data siswa dan akun user tidak dihapus. Lanjutkan?'
     )
 
     if (!confirm1) return
 
     const confirm2 = window.confirm(
-      'Konfirmasi ke-2: Data operasional yang sudah dihapus TIDAK BISA dikembalikan. Data siswa tetap aman. Kamu benar-benar yakin?'
+      'Data yang sudah dihapus tidak dapat dikembalikan. Yakin ingin melanjutkan?'
     )
 
     if (!confirm2) return
 
-    const confirm3 = window.confirm(
-      'Konfirmasi terakhir: Setelah ini data operasional sistem akan kosong, tetapi data siswa tetap ada. Klik OK hanya kalau benar-benar yakin.'
-    )
-
-    if (!confirm3) return
-
     const typed = window.prompt('Ketik RESET SEMUA DATA untuk melanjutkan.')
 
     if (typed !== 'RESET SEMUA DATA') {
-      setMessage('Reset dibatalkan. Teks konfirmasi tidak sesuai.')
+      showMessage('Reset dibatalkan. Teks konfirmasi tidak sesuai.', 'info')
       return
     }
 
     setSaving(true)
-    setMessage('Sedang menghapus data operasional...')
+    showMessage('Sedang menghapus data operasional...', 'info')
 
-    const { error } = await supabase.rpc('reset_all_app_data')
+    try {
+      const { error } = await supabase.rpc('reset_all_app_data')
 
-    if (error) {
-      setMessage(`Gagal reset data operasional: ${error.message}`)
+      if (error) {
+        throw new Error(
+          `RPC reset_all_app_data gagal: ${error.message}`
+        )
+      }
+
+      setTentors([])
+      setTentorForm(emptyTentorForm)
+      setEditingTentorId(null)
+      setBusiness(defaultBusinessSettings)
+
+      localStorage.clear()
+      sessionStorage.clear()
+
+      await loadData({ silent: true })
+      showMessage(
+        'Data operasional berhasil direset. Data siswa dan akun tetap aman.',
+        'success'
+      )
+    } catch (error) {
+      showMessage(
+        error instanceof Error
+          ? error.message
+          : 'Gagal mereset data operasional.',
+        'error'
+      )
+    } finally {
       setSaving(false)
-      return
     }
-
-    setTentors([])
-    setTentorForm(emptyTentorForm)
-    setEditingTentorId(null)
-    setBusiness(defaultBusinessSettings)
-
-    localStorage.clear()
-    sessionStorage.clear()
-
-    setMessage(
-      'Data operasional berhasil direset. Data siswa, akun admin, dan akun user tetap aman.'
-    )
-
-    setSaving(false)
-    await loadData()
   }
 
+  const logoPreview = business.logo_url.trim() || defaultBusinessSettings.logo_url
+
   return (
-    <main className="min-h-screen bg-[#FAFBF7] px-4 py-5 sm:px-6 lg:px-7">
-      <div className="mx-auto max-w-7xl space-y-5">
-        <section className="rounded-[32px] border border-[#E7EFE6] bg-white p-6 sm:p-7">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+    <main className="min-h-screen bg-[#F5F7FA] px-4 py-5 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
+      <div className="mx-auto w-full max-w-[1280px] space-y-5">
+        <section className="overflow-hidden rounded-3xl border border-[#DDE7E2] bg-[#0B513B] shadow-[0_10px_30px_rgba(15,61,46,0.08)]">
+          <div className="flex flex-col gap-5 p-6 sm:p-8 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-[#E7EFE6] bg-[#F3F8F1] px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-[#063D27]">
-                <Settings className="h-4 w-4" />
-                Admin · Pengaturan
+              <div className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-white">
+                <Settings className="h-5 w-5" />
               </div>
 
-              <h1 className="mt-5 max-w-3xl text-3xl font-black tracking-tight text-[#063D27] sm:text-4xl">
-                Settings Admin
+              <h1 className="mt-5 text-2xl font-bold tracking-tight text-white sm:text-3xl lg:text-[34px]">
+                Pengaturan
               </h1>
 
-              <p className="mt-3 max-w-2xl text-sm font-medium leading-7 text-slate-500 sm:text-base">
-                Atur profil admin, identitas bimbel, anggota tentor, keamanan akun,
-                dan reset data operasional tanpa menghapus data siswa.
+              <p className="mt-2 max-w-2xl text-sm font-medium leading-6 text-white/70 sm:text-base">
+                Kelola profil admin, data bimbel, tentor, dan keamanan akun.
               </p>
             </div>
 
             <button
               type="button"
-              onClick={loadData}
-              disabled={loading}
-              className="inline-flex h-12 items-center justify-center gap-2 rounded-full border border-[#DDE9DB] bg-[#F3F8F1] px-5 text-sm font-black text-[#063D27] transition hover:bg-[#EAF3E8] disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={() => void loadData()}
+              disabled={loading || saving}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 px-4 text-sm font-semibold text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {loading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <RefreshCcw className="h-4 w-4" />
               )}
-              Refresh
+              Muat Ulang
             </button>
           </div>
         </section>
 
         {message && (
-          <div className="rounded-[24px] border border-[#EFE6BF] bg-[#FFFBEA] px-5 py-4 text-sm font-black text-[#063D27]">
+          <div
+            role="status"
+            className={`rounded-2xl border px-4 py-3 text-sm font-semibold ${
+              messageType === 'success'
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                : messageType === 'error'
+                  ? 'border-red-200 bg-red-50 text-red-700'
+                  : 'border-amber-200 bg-amber-50 text-amber-800'
+            }`}
+          >
             {message}
           </div>
         )}
 
-        <section className="grid gap-4 md:grid-cols-3">
+        <section className="grid gap-3 md:grid-cols-3">
           <MiniStatCard
             title="Login Admin"
             value={userEmail || '-'}
             desc={profile?.role ? `Role: ${profile.role}` : 'Akun aktif'}
             icon={<ShieldCheck className="h-5 w-5" />}
+            iconClassName="bg-blue-50 text-blue-700"
           />
 
           <MiniStatCard
             title="Tentor Aktif"
             value={`${activeTentors}`}
-            desc={`${tentors.length} total anggota tentor`}
+            desc={`${tentors.length} total tentor`}
             icon={<UsersRound className="h-5 w-5" />}
+            iconClassName="bg-emerald-50 text-emerald-700"
           />
 
           <MiniStatCard
             title="Tentor Nonaktif"
             value={`${inactiveTentors}`}
-            desc="Tidak tampil sebagai tentor aktif"
+            desc="Tidak tersedia untuk operasional aktif"
             icon={<BookOpen className="h-5 w-5" />}
+            iconClassName="bg-amber-50 text-amber-700"
           />
         </section>
 
-        <section className="grid gap-5 xl:grid-cols-[0.85fr_1.15fr]">
+        <section className="grid items-start gap-5 xl:grid-cols-[0.9fr_1.1fr]">
           <div className="space-y-5">
             <SettingsCard
               title="Profil Admin"
-              desc="Data ini dipakai untuk identitas admin yang sedang login."
+              desc="Informasi akun admin yang sedang digunakan."
               icon={<UserRound className="h-5 w-5" />}
+              iconClassName="bg-blue-50 text-blue-700"
             >
               <form onSubmit={saveProfile} className="space-y-4">
                 <Field label="Nama Admin">
@@ -539,22 +697,25 @@ export default function AdminSettingsPage() {
                     onChange={(e) => setAdminName(e.target.value)}
                     className="input-style"
                     placeholder="Nama admin"
+                    autoComplete="name"
                   />
                 </Field>
 
                 <Field label="Nomor HP">
                   <input
+                    type="tel"
                     value={adminPhone}
                     onChange={(e) => setAdminPhone(e.target.value)}
                     className="input-style"
-                    placeholder="Nomor HP admin"
+                    placeholder="08xxxxxxxxxx"
+                    autoComplete="tel"
                   />
                 </Field>
 
                 <Field label="Email Login">
-                  <div className="flex h-12 items-center gap-2 rounded-full border border-[#E7EFE6] bg-[#F8FAF7] px-4 text-sm font-bold text-slate-500">
+                  <div className="flex h-12 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-500">
                     <Mail className="h-4 w-4" />
-                    {userEmail || '-'}
+                    <span className="truncate">{userEmail || '-'}</span>
                   </div>
                 </Field>
 
@@ -564,10 +725,31 @@ export default function AdminSettingsPage() {
 
             <SettingsCard
               title="Pengaturan Bimbel"
-              desc="Data ini nanti bisa dipakai untuk header invoice dan laporan."
+              desc="Simpan identitas dan logo bimbel."
               icon={<Building2 className="h-5 w-5" />}
+              iconClassName="bg-violet-50 text-violet-700"
             >
               <form onSubmit={saveBusinessSettings} className="space-y-4">
+                <div className="flex items-center gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-white">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={logoPreview}
+                      alt="Logo bimbel"
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-slate-900">
+                      Logo Bimbel
+                    </p>
+                    <p className="mt-1 truncate text-xs font-medium text-slate-500">
+                      {logoPreview}
+                    </p>
+                  </div>
+                </div>
+
                 <Field label="Nama Bimbel">
                   <input
                     value={business.name}
@@ -578,6 +760,7 @@ export default function AdminSettingsPage() {
                       }))
                     }
                     className="input-style"
+                    placeholder="Nama bimbel"
                   />
                 </Field>
 
@@ -592,12 +775,14 @@ export default function AdminSettingsPage() {
                     }
                     className="textarea-style"
                     rows={3}
+                    placeholder="Alamat bimbel"
                   />
                 </Field>
 
                 <div className="grid gap-4 md:grid-cols-2">
                   <Field label="Nomor WhatsApp">
                     <input
+                      type="tel"
                       value={business.phone}
                       onChange={(e) =>
                         setBusiness((prev) => ({
@@ -606,11 +791,13 @@ export default function AdminSettingsPage() {
                         }))
                       }
                       className="input-style"
+                      placeholder="08xxxxxxxxxx"
                     />
                   </Field>
 
                   <Field label="Email Bimbel">
                     <input
+                      type="email"
                       value={business.email}
                       onChange={(e) =>
                         setBusiness((prev) => ({
@@ -619,11 +806,12 @@ export default function AdminSettingsPage() {
                         }))
                       }
                       className="input-style"
+                      placeholder="email@contoh.com"
                     />
                   </Field>
                 </div>
 
-                <Field label="Logo URL Opsional">
+                <Field label="Path / URL Logo">
                   <input
                     value={business.logo_url}
                     onChange={(e) =>
@@ -633,73 +821,95 @@ export default function AdminSettingsPage() {
                       }))
                     }
                     className="input-style"
-                    placeholder="https://..."
+                    placeholder="/images/logo bimbel.jpg"
                   />
                 </Field>
 
-                <SubmitButton loading={saving} text="Simpan Pengaturan Bimbel" />
+                <SubmitButton
+                  loading={saving}
+                  text="Simpan Pengaturan Bimbel"
+                />
               </form>
             </SettingsCard>
 
             <SettingsCard
               title="Keamanan Akun"
-              desc="Kirim link reset password ke email admin."
+              desc="Ubah password admin langsung dari akun yang sedang login."
               icon={<KeyRound className="h-5 w-5" />}
+              iconClassName="bg-amber-50 text-amber-700"
             >
-              <div className="rounded-[22px] border border-[#E7EFE6] bg-[#FAFBF7] p-4">
-                <p className="text-sm font-black text-[#063D27]">
-                  Reset password akan dikirim ke:
-                </p>
-                <p className="mt-1 text-sm font-semibold text-slate-500">
-                  {userEmail || '-'}
-                </p>
-              </div>
+              <form onSubmit={changePassword} className="space-y-4">
+                <Field label="Password Baru">
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      className="input-style pr-12"
+                      placeholder="Minimal 8 karakter"
+                      autoComplete="new-password"
+                    />
 
-              <button
-                type="button"
-                onClick={sendResetPasswordEmail}
-                disabled={saving || !userEmail}
-                className="mt-4 inline-flex h-12 w-full items-center justify-center gap-2 rounded-full border border-[#DDE9DB] bg-[#F3F8F1] text-sm font-black text-[#063D27] transition hover:bg-[#EAF3E8] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {saving ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Mail className="h-4 w-4" />
-                )}
-                Kirim Link Reset Password
-              </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      className="absolute right-3 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                      aria-label={showPassword ? 'Sembunyikan password' : 'Lihat password'}
+                    >
+                      {showPassword ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
+                </Field>
+
+                <Field label="Ulangi Password Baru">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="input-style"
+                    placeholder="Ulangi password"
+                    autoComplete="new-password"
+                  />
+                </Field>
+
+                <SubmitButton loading={saving} text="Ubah Password" />
+              </form>
             </SettingsCard>
 
             <SettingsCard
-              title="Danger Zone"
-              desc="Reset cache atau reset data operasional tanpa menghapus siswa."
+              title="Reset Data"
+              desc="Gunakan hanya saat memang diperlukan."
               icon={<AlertTriangle className="h-5 w-5" />}
+              iconClassName="bg-red-50 text-red-700"
             >
-              <div className="rounded-[22px] border border-[#EFE6BF] bg-[#FFFBEA] p-4 text-sm font-semibold leading-6 text-[#7A5C00]">
-                Reset cache hanya membersihkan localStorage dan sessionStorage di browser ini.
-                Data database tidak ikut terhapus.
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-medium leading-6 text-amber-800">
+                Reset cache hanya menghapus data lokal di browser ini.
               </div>
 
               <button
                 type="button"
                 onClick={resetLocalCache}
-                className="mt-4 inline-flex h-12 w-full items-center justify-center gap-2 rounded-full border border-[#EFE6BF] bg-[#FFFBEA] text-sm font-black text-[#7A5C00] transition hover:bg-[#FFF7D0]"
+                className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-amber-200 bg-white text-sm font-semibold text-amber-800 transition hover:bg-amber-50"
               >
                 <RefreshCcw className="h-4 w-4" />
-                Reset Cache Lokal
+                Hapus Cache Lokal
               </button>
 
-              <div className="mt-5 rounded-[22px] border border-red-200 bg-red-50 p-4 text-sm font-semibold leading-6 text-red-700">
-                Tombol di bawah ini akan menghapus data operasional seperti jadwal,
-                jurnal, SPP, invoice, transaksi dana, honor, anggota tentor, dan pengaturan.
-                Data siswa, akun admin, dan akun user tidak dihapus.
+              <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-medium leading-6 text-red-700">
+                Reset data operasional memerlukan fungsi database
+                <span className="font-bold"> reset_all_app_data</span> di Supabase.
+                Data siswa dan akun user tidak boleh ikut terhapus.
               </div>
 
               <button
                 type="button"
                 onClick={resetAllAppData}
                 disabled={saving}
-                className="mt-4 inline-flex h-12 w-full items-center justify-center gap-2 rounded-full border border-red-200 bg-red-600 text-sm font-black text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-red-600 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-slate-300"
               >
                 {saving ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -712,160 +922,168 @@ export default function AdminSettingsPage() {
           </div>
 
           <div className="space-y-5">
-            <SettingsCard
-              title={editingTentorId ? 'Edit Anggota Tentor' : 'Tambah Anggota Tentor'}
-              desc="Kelola data tentor untuk kebutuhan operasional bimbel."
-              icon={<UsersRound className="h-5 w-5" />}
-            >
-              <form onSubmit={saveTentor} className="space-y-4">
-                <Field label="Nama Tentor">
-                  <input
-                    value={tentorForm.nama}
-                    onChange={(e) =>
-                      setTentorForm((prev) => ({
-                        ...prev,
-                        nama: e.target.value,
-                      }))
-                    }
-                    className="input-style"
-                    placeholder="Contoh: Bu Rani"
-                  />
-                </Field>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <Field label="Nomor HP">
+            <div id="form-tentor" className="scroll-mt-6">
+              <SettingsCard
+                title={editingTentorId ? 'Edit Tentor' : 'Tambah Tentor'}
+                desc="Kelola data tentor yang digunakan dalam operasional bimbel."
+                icon={<UsersRound className="h-5 w-5" />}
+                iconClassName="bg-emerald-50 text-emerald-700"
+              >
+                <form onSubmit={saveTentor} className="space-y-4">
+                  <Field label="Nama Tentor">
                     <input
-                      value={tentorForm.phone}
+                      value={tentorForm.nama}
                       onChange={(e) =>
                         setTentorForm((prev) => ({
                           ...prev,
-                          phone: e.target.value,
+                          nama: e.target.value,
                         }))
                       }
                       className="input-style"
-                      placeholder="08xxxxxxxxxx"
+                      placeholder="Nama tentor"
                     />
                   </Field>
 
-                  <Field label="Email Opsional">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <Field label="Nomor HP">
+                      <input
+                        type="tel"
+                        value={tentorForm.phone}
+                        onChange={(e) =>
+                          setTentorForm((prev) => ({
+                            ...prev,
+                            phone: e.target.value,
+                          }))
+                        }
+                        className="input-style"
+                        placeholder="08xxxxxxxxxx"
+                      />
+                    </Field>
+
+                    <Field label="Email">
+                      <input
+                        type="email"
+                        value={tentorForm.email}
+                        onChange={(e) =>
+                          setTentorForm((prev) => ({
+                            ...prev,
+                            email: e.target.value,
+                          }))
+                        }
+                        className="input-style"
+                        placeholder="email@contoh.com"
+                      />
+                    </Field>
+                  </div>
+
+                  <Field label="Mapel / Keahlian">
                     <input
-                      value={tentorForm.email}
+                      value={tentorForm.mapel}
                       onChange={(e) =>
                         setTentorForm((prev) => ({
                           ...prev,
-                          email: e.target.value,
+                          mapel: e.target.value,
                         }))
                       }
                       className="input-style"
-                      placeholder="email@contoh.com"
+                      placeholder="Matematika, IPA, Bahasa Inggris"
                     />
                   </Field>
-                </div>
 
-                <Field label="Mapel / Keahlian">
-                  <input
-                    value={tentorForm.mapel}
-                    onChange={(e) =>
-                      setTentorForm((prev) => ({
-                        ...prev,
-                        mapel: e.target.value,
-                      }))
-                    }
-                    className="input-style"
-                    placeholder="Matematika, IPA, Bahasa Inggris..."
-                  />
-                </Field>
+                  <Field label="Catatan">
+                    <textarea
+                      value={tentorForm.catatan}
+                      onChange={(e) =>
+                        setTentorForm((prev) => ({
+                          ...prev,
+                          catatan: e.target.value,
+                        }))
+                      }
+                      className="textarea-style"
+                      rows={3}
+                      placeholder="Catatan internal admin"
+                    />
+                  </Field>
 
-                <Field label="Catatan Opsional">
-                  <textarea
-                    value={tentorForm.catatan}
-                    onChange={(e) =>
-                      setTentorForm((prev) => ({
-                        ...prev,
-                        catatan: e.target.value,
-                      }))
-                    }
-                    className="textarea-style"
-                    rows={3}
-                    placeholder="Catatan internal admin"
-                  />
-                </Field>
-
-                <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
-                  <button
-                    type="submit"
-                    disabled={saving}
-                    className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#063D27] px-5 text-sm font-black text-white transition hover:bg-[#0B5738] disabled:cursor-not-allowed disabled:bg-slate-300"
-                  >
-                    {saving ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : editingTentorId ? (
-                      <Save className="h-4 w-4" />
-                    ) : (
-                      <Plus className="h-4 w-4" />
-                    )}
-                    {editingTentorId ? 'Simpan Perubahan' : 'Tambah Tentor'}
-                  </button>
-
-                  {editingTentorId && (
+                  <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
                     <button
-                      type="button"
-                      onClick={cancelEditTentor}
-                      className="inline-flex h-12 items-center justify-center gap-2 rounded-full border border-[#DDE9DB] bg-white px-5 text-sm font-black text-[#063D27] transition hover:bg-[#F3F8F1]"
+                      type="submit"
+                      disabled={saving}
+                      className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#0B513B] px-5 text-sm font-semibold text-white transition hover:bg-[#094832] disabled:cursor-not-allowed disabled:bg-slate-300"
                     >
-                      <X className="h-4 w-4" />
-                      Batal
+                      {saving ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : editingTentorId ? (
+                        <Save className="h-4 w-4" />
+                      ) : (
+                        <Plus className="h-4 w-4" />
+                      )}
+
+                      {editingTentorId ? 'Simpan Perubahan' : 'Tambah Tentor'}
                     </button>
-                  )}
-                </div>
-              </form>
-            </SettingsCard>
+
+                    {editingTentorId && (
+                      <button
+                        type="button"
+                        onClick={cancelEditTentor}
+                        disabled={saving}
+                        className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+                      >
+                        <X className="h-4 w-4" />
+                        Batal
+                      </button>
+                    )}
+                  </div>
+                </form>
+              </SettingsCard>
+            </div>
 
             <SettingsCard
-              title="Daftar Anggota Tentor"
-              desc="Data dibuat ringkas. Klik edit kalau mau mengubah data tentor."
+              title="Daftar Tentor"
+              desc="Edit, aktifkan, nonaktifkan, atau hapus data tentor."
               icon={<BookOpen className="h-5 w-5" />}
+              iconClassName="bg-cyan-50 text-cyan-700"
             >
               <div className="space-y-3">
                 {loading ? (
-                  <div className="rounded-[22px] border border-[#E7EFE6] bg-[#FAFBF7] p-5 text-sm font-bold text-slate-500">
-                    Loading anggota tentor...
+                  <div className="flex min-h-[120px] items-center justify-center rounded-2xl border border-slate-200 bg-slate-50">
+                    <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
                   </div>
                 ) : tentors.length === 0 ? (
-                  <div className="rounded-[22px] border border-dashed border-[#DDE9DB] bg-[#FAFBF7] p-5 text-sm font-bold text-slate-500">
-                    Belum ada anggota tentor.
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm font-semibold text-slate-500">
+                    Belum ada data tentor.
                   </div>
                 ) : (
                   tentors.map((tentor) => (
                     <div
                       key={tentor.id}
-                      className="rounded-[24px] border border-[#E7EFE6] bg-[#FAFBF7] p-4"
+                      className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4"
                     >
                       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                         <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <div className="flex h-10 w-10 items-center justify-center rounded-[16px] bg-white text-sm font-black text-[#063D27] ring-1 ring-[#E7EFE6]">
+                          <div className="flex items-start gap-3">
+                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white text-sm font-bold text-[#0B513B] ring-1 ring-slate-200">
                               {getInitials(tentor.nama)}
                             </div>
 
-                            <div>
-                              <p className="font-black text-[#063D27]">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-bold text-slate-900 sm:text-[15px]">
                                 {tentor.nama}
                               </p>
 
-                              <div className="mt-1 flex flex-wrap gap-2">
+                              <div className="mt-1.5 flex flex-wrap gap-2">
                                 <span
-                                  className={`rounded-full px-3 py-1 text-xs font-black ${
+                                  className={`rounded-lg px-2.5 py-1 text-xs font-bold ${
                                     tentor.aktif
-                                      ? 'bg-[#F3F8F1] text-[#063D27]'
-                                      : 'bg-slate-100 text-slate-400'
+                                      ? 'bg-emerald-50 text-emerald-700'
+                                      : 'bg-slate-200/70 text-slate-600'
                                   }`}
                                 >
                                   {tentor.aktif ? 'Aktif' : 'Nonaktif'}
                                 </span>
 
                                 {tentor.mapel && (
-                                  <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-500 ring-1 ring-[#E7EFE6]">
+                                  <span className="rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">
                                     {tentor.mapel}
                                   </span>
                                 )}
@@ -873,20 +1091,20 @@ export default function AdminSettingsPage() {
                             </div>
                           </div>
 
-                          <div className="mt-4 grid gap-2 text-sm font-semibold text-slate-500 md:grid-cols-2">
-                            <p className="inline-flex items-center gap-2">
-                              <Phone className="h-4 w-4 text-slate-400" />
-                              {tentor.phone || '-'}
+                          <div className="mt-4 grid gap-2 text-sm font-medium text-slate-500 md:grid-cols-2">
+                            <p className="inline-flex min-w-0 items-center gap-2">
+                              <Phone className="h-4 w-4 shrink-0 text-slate-400" />
+                              <span className="truncate">{tentor.phone || '-'}</span>
                             </p>
 
-                            <p className="inline-flex items-center gap-2">
-                              <Mail className="h-4 w-4 text-slate-400" />
-                              {tentor.email || '-'}
+                            <p className="inline-flex min-w-0 items-center gap-2">
+                              <Mail className="h-4 w-4 shrink-0 text-slate-400" />
+                              <span className="truncate">{tentor.email || '-'}</span>
                             </p>
                           </div>
 
                           {tentor.catatan && (
-                            <p className="mt-3 rounded-[18px] bg-white p-3 text-sm font-medium leading-6 text-slate-500 ring-1 ring-[#E7EFE6]">
+                            <p className="mt-3 rounded-xl border border-slate-200 bg-white p-3 text-sm font-medium leading-6 text-slate-600">
                               {tentor.catatan}
                             </p>
                           )}
@@ -897,29 +1115,29 @@ export default function AdminSettingsPage() {
                             type="button"
                             onClick={() => startEditTentor(tentor)}
                             disabled={saving}
-                            className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-[#DDE9DB] bg-white px-4 text-xs font-black text-[#063D27] transition hover:bg-[#F3F8F1] disabled:opacity-60"
+                            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
                           >
-                            <Edit3 className="h-4 w-4" />
+                            <Edit3 className="h-3.5 w-3.5" />
                             Edit
                           </button>
 
                           <button
                             type="button"
-                            onClick={() => toggleTentor(tentor)}
+                            onClick={() => void toggleTentor(tentor)}
                             disabled={saving}
-                            className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-[#DDE9DB] bg-white px-4 text-xs font-black text-[#063D27] transition hover:bg-[#F3F8F1] disabled:opacity-60"
+                            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-[#0B513B] transition hover:bg-[#F1F8F4] disabled:opacity-60"
                           >
-                            <CheckCircle2 className="h-4 w-4" />
+                            <CheckCircle2 className="h-3.5 w-3.5" />
                             {tentor.aktif ? 'Nonaktifkan' : 'Aktifkan'}
                           </button>
 
                           <button
                             type="button"
-                            onClick={() => deleteTentor(tentor)}
+                            onClick={() => void deleteTentor(tentor)}
                             disabled={saving}
-                            className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-red-100 bg-red-50 px-4 text-xs font-black text-red-700 transition hover:bg-red-100 disabled:opacity-60"
+                            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-60"
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Trash2 className="h-3.5 w-3.5" />
                             Hapus
                           </button>
                         </div>
@@ -937,39 +1155,49 @@ export default function AdminSettingsPage() {
         .input-style {
           height: 3rem;
           width: 100%;
-          border-radius: 999px;
-          border: 1px solid #dde9db;
+          border-radius: 0.75rem;
+          border: 1px solid #e2e8f0;
           background: #ffffff;
           padding: 0 1rem;
           font-size: 0.875rem;
-          font-weight: 700;
+          font-weight: 600;
           color: #334155;
           outline: none;
           transition: 0.2s ease;
         }
 
+        .input-style::placeholder {
+          color: #94a3b8;
+          font-weight: 500;
+        }
+
         .input-style:focus {
-          border-color: #063d27;
-          box-shadow: 0 0 0 4px rgba(6, 61, 39, 0.08);
+          border-color: #0b513b;
+          box-shadow: 0 0 0 3px rgba(11, 81, 59, 0.1);
         }
 
         .textarea-style {
           width: 100%;
-          resize: none;
-          border-radius: 24px;
-          border: 1px solid #dde9db;
+          resize: vertical;
+          border-radius: 0.75rem;
+          border: 1px solid #e2e8f0;
           background: #ffffff;
-          padding: 0.9rem 1rem;
+          padding: 0.85rem 1rem;
           font-size: 0.875rem;
-          font-weight: 700;
+          font-weight: 600;
           color: #334155;
           outline: none;
           transition: 0.2s ease;
         }
 
+        .textarea-style::placeholder {
+          color: #94a3b8;
+          font-weight: 500;
+        }
+
         .textarea-style:focus {
-          border-color: #063d27;
-          box-shadow: 0 0 0 4px rgba(6, 61, 39, 0.08);
+          border-color: #0b513b;
+          box-shadow: 0 0 0 3px rgba(11, 81, 59, 0.1);
         }
       `}</style>
     </main>
@@ -992,23 +1220,29 @@ function SettingsCard({
   title,
   desc,
   icon,
+  iconClassName,
   children,
 }: {
   title: string
   desc: string
   icon: ReactNode
+  iconClassName: string
   children: ReactNode
 }) {
   return (
-    <section className="rounded-[30px] border border-[#E7EFE6] bg-white p-5 sm:p-6">
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.04)] sm:p-6">
       <div className="mb-5 flex items-start gap-3">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[18px] bg-[#F3F8F1] text-[#063D27] ring-1 ring-[#E7EFE6]">
+        <div
+          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${iconClassName}`}
+        >
           {icon}
         </div>
 
-        <div>
-          <h2 className="text-lg font-black text-[#063D27]">{title}</h2>
-          <p className="mt-1 text-sm font-medium leading-6 text-slate-500">
+        <div className="min-w-0">
+          <h2 className="text-lg font-bold tracking-tight text-slate-900">
+            {title}
+          </h2>
+          <p className="mt-1 text-sm font-medium leading-5 text-slate-500">
             {desc}
           </p>
         </div>
@@ -1024,27 +1258,33 @@ function MiniStatCard({
   value,
   desc,
   icon,
+  iconClassName,
 }: {
   title: string
   value: string
   desc: string
   icon: ReactNode
+  iconClassName: string
 }) {
   return (
-    <div className="rounded-[26px] border border-[#E7EFE6] bg-white p-5">
-      <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-[18px] bg-[#F3F8F1] text-[#063D27] ring-1 ring-[#E7EFE6]">
-        {icon}
+    <div className="min-h-[140px] rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-slate-500">{title}</p>
+          <p className="mt-2 truncate text-xl font-bold tracking-tight text-slate-900">
+            {value}
+          </p>
+          <p className="mt-1.5 text-xs font-medium leading-5 text-slate-500">
+            {desc}
+          </p>
+        </div>
+
+        <div
+          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${iconClassName}`}
+        >
+          {icon}
+        </div>
       </div>
-
-      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">
-        {title}
-      </p>
-
-      <p className="mt-2 truncate text-xl font-black tracking-tight text-[#063D27]">
-        {value}
-      </p>
-
-      <p className="mt-1 text-sm font-semibold text-slate-500">{desc}</p>
     </div>
   )
 }
@@ -1058,10 +1298,9 @@ function Field({
 }) {
   return (
     <div>
-      <label className="mb-2 block text-xs font-black uppercase tracking-[0.14em] text-slate-400">
+      <label className="mb-2 block text-xs font-semibold text-slate-500">
         {label}
       </label>
-
       {children}
     </div>
   )
@@ -1078,7 +1317,7 @@ function SubmitButton({
     <button
       type="submit"
       disabled={loading}
-      className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#063D27] px-5 text-sm font-black text-white transition hover:bg-[#0B5738] disabled:cursor-not-allowed disabled:bg-slate-300"
+      className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#0B513B] px-5 text-sm font-semibold text-white transition hover:bg-[#094832] disabled:cursor-not-allowed disabled:bg-slate-300"
     >
       {loading ? (
         <Loader2 className="h-4 w-4 animate-spin" />

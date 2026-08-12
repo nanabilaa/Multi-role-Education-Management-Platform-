@@ -757,10 +757,7 @@ export default async function AdminDashboard() {
           <section className="soft-hero">
             <div className="hero-grid">
               <div>
-                <div className="eyebrow">
-                  <Sparkles size={15} />
-                  Dashboard Admin CBS
-                </div>
+
 
                 <div className="time-pill">
                   <Clock3 size={15} />
@@ -772,10 +769,7 @@ export default async function AdminDashboard() {
                   <span className="hero-name">{data.adminName}</span>.
                 </h1>
 
-                <p className="hero-desc">
-                  Pantau siswa, jadwal, jurnal, SPP, dan dana bimbel dengan
-                  tampilan yang lebih tenang, rapi, dan mudah dibaca.
-                </p>
+
 
                 <div className="hero-actions">
                   <Link href="/admin/jadwal" className="btn-primary">
