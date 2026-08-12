@@ -3,7 +3,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/client'
 import { formatTanggal } from '@/lib/utils'
 
 // Isi komponen lainnya di sini...
