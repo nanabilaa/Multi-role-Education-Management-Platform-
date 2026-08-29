@@ -35,6 +35,9 @@ type LoginSlide = {
   description: string
 }
 
+// Domain untuk akun orang tua - sesuai format yang diharapkan: ortuadheen@cbs.id
+const CBS_PARENT_EMAIL_DOMAIN = 'cbs.id'
+
 const SLIDES: LoginSlide[] = [
   {
     src: '/images/photolog1.jpg',
@@ -382,7 +385,7 @@ export default function LoginPage() {
       ) {
         return {
           email:
-            `${normalizedIdentifier}@example.com`,
+            `${normalizedIdentifier}@${CBS_PARENT_EMAIL_DOMAIN}`,
           error: '',
         }
       }

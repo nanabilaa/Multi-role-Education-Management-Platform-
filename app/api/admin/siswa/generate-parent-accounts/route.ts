@@ -7,7 +7,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
 
-const EMAIL_DOMAIN = 'bimbelcbs.my.id'
+const EMAIL_DOMAIN = 'cbs.id'
 const PROCESS_BATCH_SIZE = 5
 
 type StudentRow = {
@@ -87,10 +87,26 @@ function buildLoginCode(student: StudentRow): string {
 
 /**
  * Build full email:
- * Format: ortu-{slug}@bimbelcbs.my.id
+ * Format: ortu-{slug}@cbs.id
  */
 function buildEmail(loginCode: string): string {
   return `${loginCode}@${EMAIL_DOMAIN}`
+}
+
+/**
+ * Validasi format email sebelum dikirim ke Supabase.
+ * Pastikan email tidak mengandung lebih dari satu @.
+ */
+function validateEmailFormat(email: string): void {
+  const emailParts = email.split('@')
+  
+  if (
+    emailParts.length !== 2 ||
+    !emailParts[0] ||
+    !emailParts[1]
+  ) {
+    throw new Error(`Format email akun orang tua tidak valid: ${email}`)
+  }
 }
 
 /**
@@ -224,6 +240,9 @@ export async function POST() {
       const baseLoginCode = buildLoginCode(student)
       const email = await findAvailableEmail(admin, baseLoginCode)
       
+      // Validasi format email sebelum digunakan
+      validateEmailFormat(email)
+      
       // Extract login_code dari email (tanpa @domain)
       const loginCode = email.replace(`@${EMAIL_DOMAIN}`, '')
 
@@ -295,6 +314,12 @@ export async function POST() {
           }
         }
 
+        // Final validation sebelum createUser
+        const emailParts = email.split('@')
+        if (emailParts.length !== 2 || !emailParts[0] || !emailParts[1]) {
+          throw new Error(`Email tidak valid saat akan dibuat: ${email}`)
+        }
+        
         // Buat auth user baru
         const { data: authData, error: createUserError } =
           await admin.auth.admin.createUser({

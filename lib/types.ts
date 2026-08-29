@@ -62,7 +62,22 @@ export interface Jurnal {
   materi: string
   catatan?: string
   foto_url?: string
+  foto_validasi_url?: string
+  foto_validasi_path?: string
   submitted_at: string
+}
+
+export interface JurnalSiswa {
+  id: string
+  sesi_siswa_id: string
+  jurnal_id: string
+  soal_tugas_url?: string
+  soal_tugas_path?: string
+  catatan?: string
+  created_at: string
+  updated_at: string
+  // joined
+  sesi_siswa?: SesiSiswa
 }
 
 export interface Spp {

@@ -181,7 +181,7 @@ export default async function TentorSesiPage() {
 
                       <div className="flex flex-wrap gap-2">
                         <Link
-                          href="/tentor/jurnal"
+                          href={`/tentor/sesi/${sesi.id}/jurnal`}
                           className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-[#DDE9DB] bg-white px-4 text-xs font-black text-[#063D27] transition hover:bg-[#F3F8F1]"
                         >
                           <BookOpenCheck className="h-4 w-4" />

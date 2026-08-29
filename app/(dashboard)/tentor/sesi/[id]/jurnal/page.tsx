@@ -605,6 +605,53 @@ export default async function JurnalSesiPage({
                         placeholder="Contoh: Sudah mengerjakan latihan 1-10, masih perlu dibimbing di soal cerita"
                       />
                     </div>
+
+                    {/* Soal/Tugas Section - New Feature */}
+                    <div className="border-t border-slate-200 pt-4">
+                      <p className="mb-3 text-sm font-semibold text-slate-700">
+                        📷 Soal/Tugas yang Dikerjakan
+                      </p>
+                      
+                      <div className="grid gap-4 lg:grid-cols-2">
+                        <div>
+                          <label
+                            htmlFor={`soal_catatan_${item.relasiId}`}
+                            className="mb-2 block text-xs font-medium text-slate-500"
+                          >
+                            Catatan Soal/Tugas
+                          </label>
+                          <input
+                            id={`soal_catatan_${item.relasiId}`}
+                            name={`soal_catatan_${item.relasiId}`}
+                            type="text"
+                            disabled={isSelesai}
+                            className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-[#063D27] focus:ring-2 focus:ring-[#063D27]/10 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                            placeholder="Contoh: Hal 45-46, 5 soal"
+                          />
+                        </div>
+
+                        <div>
+                          <label
+                            htmlFor={`soal_foto_${item.relasiId}`}
+                            className="mb-2 block text-xs font-medium text-slate-500"
+                          >
+                            Foto Soal/Tugas
+                          </label>
+                          <input
+                            id={`soal_foto_${item.relasiId}`}
+                            name={`soal_foto_${item.relasiId}`}
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            disabled={isSelesai}
+                            className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-[#063D27] focus:ring-2 focus:ring-[#063D27]/10 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"
+                          />
+                          <p className="mt-1 text-xs text-slate-400">
+                            Format: JPG, PNG. Maksimal 5MB. Foto akan dikompresi otomatis.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               ))

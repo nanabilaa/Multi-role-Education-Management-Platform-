@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-const INTERNAL_EMAIL_DOMAIN = 'bimbelcbs.my.id'
+const INTERNAL_EMAIL_DOMAIN = 'cbs.id'
 
 function getSupabaseConfig() {
   const supabaseUrl =
