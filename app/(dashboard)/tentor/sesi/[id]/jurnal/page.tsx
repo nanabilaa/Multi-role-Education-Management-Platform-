@@ -3,6 +3,7 @@ import { revalidatePath } from 'next/cache'
 import { notFound, redirect } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
+import SubmitButton from './SubmitButton'
 
 type PageProps = {
   params: {
@@ -683,21 +684,14 @@ export default async function JurnalSesiPage({
             </div>
           ) : (
             <div className="relative z-[999] mt-6 flex justify-end gap-3 pointer-events-auto">
-              <button
-                type="submit"
-                form="jurnal-form"
-                name="intent"
-                value="save"
-                className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 active:scale-[0.98]"
-              >
-                Simpan Draft
-              </button>
+              <SubmitButton label="Simpan Draft" variant="secondary" />
 
               <button
                 type="submit"
                 form="jurnal-form"
                 name="intent"
                 value="close"
+                disabled={false}
                 className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 active:scale-[0.98]"
               >
                 Simpan & Tutup Sesi

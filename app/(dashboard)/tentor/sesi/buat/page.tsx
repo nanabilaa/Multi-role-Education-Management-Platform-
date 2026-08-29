@@ -9,11 +9,12 @@ import {
   CheckCircle2,
   Clock3,
   GraduationCap,
-  Save,
   Search,
   UsersRound,
   X,
 } from 'lucide-react'
+
+import SubmitButton from './SubmitButton'
 
 type SiswaRow = {
   id: string
@@ -539,13 +540,7 @@ export default async function BuatSesiTentorPage() {
             )}
 
             <div className="mt-5 border-t border-[#EEF3EC] pt-5">
-              <button
-                type="submit"
-                className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#063D27] px-5 text-sm font-black text-white transition hover:bg-[#0B5738]"
-              >
-                <Save className="h-4 w-4" />
-                Simpan Sesi
-              </button>
+              <SubmitButton />
 
               <p className="mt-3 flex items-start gap-2 text-xs font-semibold leading-5 text-slate-400">
                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#063D27]" />

@@ -8,12 +8,13 @@ import {
   CheckCircle2,
   GraduationCap,
   Home,
-  Save,
   School,
   ToggleLeft,
   UserRound,
   UsersRound,
 } from 'lucide-react'
+
+import SubmitButton from './SubmitButton'
 
 const kelasOptions = [
   'Kelas 7',
@@ -392,13 +393,7 @@ export default async function EditSiswaPage({ params }: PageProps) {
                   Batal
                 </Link>
 
-                <button
-                  type="submit"
-                  className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-[#063D27] px-6 text-sm font-black text-white shadow-sm transition hover:bg-[#0B5738]"
-                >
-                  <Save className="h-4 w-4" />
-                  Simpan Perubahan
-                </button>
+                <SubmitButton />
               </div>
             </div>
           </form>
