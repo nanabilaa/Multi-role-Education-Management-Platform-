@@ -163,17 +163,13 @@ export default function TambahSiswaPage() {
               label="Alamat"
               htmlFor="alamat"
             >
-              <div className="relative">
-                <MapPin className="pointer-events-none absolute left-4 top-4 z-10 h-4 w-4 text-slate-400" />
-
-                <textarea
-                  id="alamat"
-                  name="alamat"
-                  rows={4}
-                  className="textarea-style pl-11"
-                  placeholder="Masukkan alamat lengkap siswa"
-                />
-              </div>
+              <textarea
+                id="alamat"
+                name="alamat"
+                rows={4}
+                className="textarea-style"
+                placeholder="Masukkan alamat lengkap siswa"
+              />
             </Field>
           </FormCard>
 
