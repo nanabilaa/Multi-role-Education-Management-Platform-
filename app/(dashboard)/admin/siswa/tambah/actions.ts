@@ -13,6 +13,8 @@ const paketOptions = [
 type PaketSiswa = (typeof paketOptions)[number]['value']
 
 export async function handleSubmit(formData: FormData) {
+  const supabase = await createClient()
+
   const nama = String(formData.get('nama') || '').trim()
   const kelas = String(formData.get('kelas') || '').trim()
   const sekolah = String(formData.get('sekolah') || '').trim()
@@ -43,8 +45,6 @@ export async function handleSubmit(formData: FormData) {
   if (!paketValid) {
     throw new Error('Paket yang dipilih tidak valid.')
   }
-
-  const supabase = await createClient()
 
   const payload: {
     nama: string
@@ -82,36 +82,5 @@ export async function handleSubmit(formData: FormData) {
   revalidatePath('/admin/dana')
   revalidatePath('/tentor/sesi/tambah')
 
-  redirect('/admin/siswa')
-}
-
-export async function tambahSiswa(formData: FormData) {
-  const nama = formData.get('nama')?.toString().trim()
-  const kelas = formData.get('kelas')?.toString().trim()
-  const sekolah = formData.get('sekolah')?.toString().trim()
-  const aktifValue = formData.get('aktif')?.toString()
-
-  if (!nama) {
-    throw new Error('Nama siswa wajib diisi.')
-  }
-
-  if (!kelas) {
-    throw new Error('Kelas siswa wajib dipilih.')
-  }
-
-  const supabase = await createClient()
-
-  const { error } = await supabase.from('siswa').insert({
-    nama,
-    kelas,
-    sekolah: sekolah || null,
-    aktif: aktifValue === 'true',
-  })
-
-  if (error) {
-    throw new Error(error.message)
-  }
-
-  revalidatePath('/admin/siswa')
   redirect('/admin/siswa')
 }

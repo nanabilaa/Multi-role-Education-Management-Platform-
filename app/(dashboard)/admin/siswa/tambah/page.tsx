@@ -1,6 +1,4 @@
 import Link from 'next/link'
-import { redirect } from 'next/navigation'
-import { revalidatePath } from 'next/cache'
 import {
   ArrowLeft,
   BriefcaseBusiness,
@@ -8,14 +6,13 @@ import {
   GraduationCap,
   Layers3,
   MapPin,
-  Save,
   School,
   UserRound,
   UsersRound,
 } from 'lucide-react'
 
-import { createClient } from '@/lib/supabase/server'
 import SubmitButton from './SubmitButton'
+import { handleSubmit } from './actions'
 
 const paketOptions = [
   { value: 'reguler', label: 'Reguler' },
@@ -23,84 +20,7 @@ const paketOptions = [
   { value: 'utbk', label: 'UTBK' },
 ] as const
 
-type PaketSiswa = (typeof paketOptions)[number]['value']
-
-export default async function TambahSiswaPage() {
-  async function handleSubmit(formData: FormData) {
-    'use server'
-
-    const supabase = await createClient()
-
-    const nama = String(formData.get('nama') || '').trim()
-    const kelas = String(formData.get('kelas') || '').trim()
-    const sekolah = String(formData.get('sekolah') || '').trim()
-    const paket = String(formData.get('paket') || '')
-      .trim()
-      .toLowerCase()
-    const tanggalLahir = String(
-      formData.get('tanggal_lahir') || '',
-    ).trim()
-    const alamat = String(formData.get('alamat') || '').trim()
-    const namaOrtu = String(
-      formData.get('nama_ortu') || '',
-    ).trim()
-    const pekerjaanOrtu = String(
-      formData.get('pekerjaan_ortu') || '',
-    ).trim()
-
-    if (!nama || !kelas || !sekolah || !paket || !namaOrtu) {
-      throw new Error(
-        'Nama siswa, kelas, sekolah, paket, dan nama orang tua wajib diisi.',
-      )
-    }
-
-    const paketValid = paketOptions.some(
-      (item) => item.value === paket,
-    )
-
-    if (!paketValid) {
-      throw new Error('Paket yang dipilih tidak valid.')
-    }
-
-    const payload: {
-      nama: string
-      kelas: string
-      sekolah: string
-      paket: PaketSiswa
-      nama_ortu: string
-      pekerjaan_ortu: string | null
-      alamat: string | null
-      aktif: boolean
-      tanggal_lahir: string | null
-    } = {
-      nama,
-      kelas,
-      sekolah,
-      paket: paket as PaketSiswa,
-      nama_ortu: namaOrtu,
-      pekerjaan_ortu: pekerjaanOrtu || null,
-      alamat: alamat || null,
-      aktif: true,
-      tanggal_lahir: tanggalLahir || null,
-    }
-
-    const { error } = await supabase
-      .from('siswa')
-      .insert(payload)
-
-    if (error) {
-      throw new Error(
-        `Gagal menambahkan siswa: ${error.message}`,
-      )
-    }
-
-    revalidatePath('/admin/siswa')
-    revalidatePath('/admin/dana')
-    revalidatePath('/tentor/sesi/tambah')
-
-    redirect('/admin/siswa')
-  }
-
+export default function TambahSiswaPage() {
   return (
     <main className="min-h-screen bg-[#F5F7FA] px-4 py-5 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
       <div className="mx-auto w-full max-w-[1100px] space-y-5">
@@ -310,13 +230,7 @@ export default async function TambahSiswaPage() {
                 Batal
               </Link>
 
-              <button
-                type="submit"
-                className="inline-flex h-11 min-w-[160px] items-center justify-center gap-2 rounded-xl bg-[#0B513B] px-5 text-sm font-bold text-white transition-colors hover:bg-[#08442F] focus:outline-none focus:ring-2 focus:ring-[#0B513B]/20"
-              >
-                <Save className="h-4 w-4" />
-                Simpan Siswa
-              </button>
+              <SubmitButton />
             </div>
           </section>
         </form>
