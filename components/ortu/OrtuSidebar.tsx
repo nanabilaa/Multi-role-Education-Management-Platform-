@@ -3,6 +3,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useEffect, useState } from 'react'
 import {
   BookOpenCheck,
   CalendarDays,
@@ -12,6 +13,7 @@ import {
   WalletCards,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import Avatar from '@/components/ui/Avatar'
 
 const menuItems = [
   {
@@ -44,6 +46,26 @@ const menuItems = [
 export default function OrtuSidebar() {
   const pathname = usePathname()
   const supabase = createClient()
+  const [userName, setUserName] = useState('')
+  const [userAvatar, setUserAvatar] = useState<string | null>(null)
+
+  useEffect(() => {
+    async function loadUser() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('full_name, avatar_url')
+          .eq('id', user.id)
+          .single()
+        if (profile) {
+          setUserName(profile.full_name || '')
+          setUserAvatar(profile.avatar_url)
+        }
+      }
+    }
+    loadUser()
+  }, [supabase])
 
   async function handleLogout() {
     await supabase.auth.signOut()
@@ -53,26 +75,17 @@ export default function OrtuSidebar() {
   return (
     <aside className="hidden min-h-screen w-[280px] shrink-0 border-r border-slate-200 bg-white lg:block">
       <div className="sticky top-0 flex h-screen flex-col px-4 py-5">
-        {/* Logo */}
+        {/* Logo + User */}
         <div className="flex h-[82px] items-center gap-3.5 rounded-2xl border border-slate-200 bg-slate-50 px-4">
-          <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-white">
-            <Image
-              src="/images/logo bimbel.jpg"
-              alt="Logo CBS"
-              fill
-              priority
-              sizes="48px"
-              className="object-cover"
-            />
-          </div>
+          <Avatar src={userAvatar} alt={userName} size="md" />
 
           <div className="min-w-0">
             <p className="truncate text-[15px] font-bold leading-5 text-slate-900">
-              CBS System
+              {userName || 'Orang Tua'}
             </p>
 
             <p className="mt-0.5 text-xs font-medium text-slate-500">
-              Orang Tua
+              CBS System
             </p>
           </div>
         </div>
