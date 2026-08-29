@@ -57,25 +57,18 @@ function getDefaultParentPassword(): string {
   return password
 }
 
-function slugify(value: string) {
+function cleanNameForLogin(value: string) {
   return value
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
+    .replace(/[^a-z0-9]/g, '')
+    .slice(0, 40)
 }
 
 function buildLoginCode(student: StudentRow) {
-  const nameSlug =
-    slugify(student.nama).slice(0, 30) ||
-    'siswa'
-
-  const uniqueSuffix = student.id
-    .replaceAll('-', '')
-    .slice(0, 8)
-
-  return `ortu-${nameSlug}-${uniqueSuffix}`
+  const namePart = cleanNameForLogin(student.nama) || 'anak'
+  return `ortu${namePart}@cbs.id`
 }
 
 function buildInternalEmail(

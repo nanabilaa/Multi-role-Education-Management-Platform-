@@ -8,6 +8,9 @@ const inter = Inter({ subsets: ['latin'] })
 export const metadata: Metadata = {
   title: 'CBS System — Manajemen Bimbel',
   description: 'Sistem manajemen bimbingan belajar',
+  icons: {
+    icon: '/favicon.ico',
+  },
 }
 
 export default function RootLayout({
