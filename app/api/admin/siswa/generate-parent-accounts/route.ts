@@ -7,7 +7,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
 
-const EMAIL_DOMAIN = 'cbs.id'
+const EMAIL_DOMAIN = 'bimbelcbs.my.id'
 const PROCESS_BATCH_SIZE = 5
 
 type StudentRow = {
@@ -87,26 +87,10 @@ function buildLoginCode(student: StudentRow): string {
 
 /**
  * Build full email:
- * Format: ortu-{slug}@cbs.id
+ * Format: ortu-{slug}@bimbelcbs.my.id
  */
 function buildEmail(loginCode: string): string {
   return `${loginCode}@${EMAIL_DOMAIN}`
-}
-
-/**
- * Validasi format email sebelum dikirim ke Supabase.
- * Pastikan email tidak mengandung lebih dari satu @.
- */
-function validateEmailFormat(email: string): void {
-  const emailParts = email.split('@')
-  
-  if (
-    emailParts.length !== 2 ||
-    !emailParts[0] ||
-    !emailParts[1]
-  ) {
-    throw new Error(`Format email akun orang tua tidak valid: ${email}`)
-  }
 }
 
 /**
@@ -118,7 +102,7 @@ async function findAvailableEmail(
   baseLoginCode: string
 ): Promise<string> {
   const baseEmail = buildEmail(baseLoginCode)
-  
+
   // Cek apakah email base sudah ada
   const { data: existing } = await admin
     .from('profiles')
@@ -239,10 +223,7 @@ export async function POST() {
     ): Promise<GenerationResult> => {
       const baseLoginCode = buildLoginCode(student)
       const email = await findAvailableEmail(admin, baseLoginCode)
-      
-      // Validasi format email sebelum digunakan
-      validateEmailFormat(email)
-      
+
       // Extract login_code dari email (tanpa @domain)
       const loginCode = email.replace(`@${EMAIL_DOMAIN}`, '')
 
@@ -264,6 +245,7 @@ export async function POST() {
             )
           }
 
+          // Update profile
           const { error: profileUpdateError } = await admin
             .from('profiles')
             .update({
@@ -314,57 +296,40 @@ export async function POST() {
           }
         }
 
-        // Final validation sebelum createUser
-        const emailParts = email.split('@')
-        if (emailParts.length !== 2 || !emailParts[0] || !emailParts[1]) {
-          throw new Error(`Email tidak valid saat akan dibuat: ${email}`)
-        }
-        
-        // Buat auth user baru
-        const { data: authData, error: createUserError } =
-          await admin.auth.admin.createUser({
-            email,
-            password: defaultParentPassword,
-            email_confirm: true,
-            user_metadata: {
-              full_name: parentName,
-              role: 'ortu',
-            },
-          })
+        // =============================================
+        // Use RPC to create auth user AND profile
+        // The RPC handles ON CONFLICT DO UPDATE
+        // =============================================
+        const { data: rpcResult, error: rpcError } = await admin.rpc(
+          'create_cbs_auth_user',
+          {
+            user_email: email,
+            user_password: defaultParentPassword,
+            user_full_name: parentName,
+            user_role: 'ortu',
+            user_phone: null,
+          }
+        )
 
-        if (createUserError) {
+        if (rpcError) {
           throw new Error(
-            `Gagal membuat auth user: ${createUserError.message}`
+            `Gagal membuat auth user via RPC: ${rpcError.message}`
           )
         }
 
-        const authUserId = authData.user.id
-
-        // Buat profile
-        const { error: profileError } = await admin.from('profiles').insert({
-          id: authUserId,
-          full_name: parentName,
-          role: 'ortu',
-          email,
-          login_code: loginCode,
-        })
-
-        if (profileError) {
-          // Rollback: hapus auth user
-          await admin.auth.admin.deleteUser(authUserId)
-          throw new Error(`Gagal membuat profile: ${profileError.message}`)
+        if (!rpcResult) {
+          throw new Error('RPC tidak mengembalikan user ID')
         }
+
+        const parentUserId = rpcResult as string
 
         // Tautkan ke siswa
         const { error: linkError } = await admin
           .from('siswa')
-          .update({ ortu_id: authUserId })
+          .update({ ortu_id: parentUserId })
           .eq('id', student.id)
 
         if (linkError) {
-          // Rollback: hapus profile dan auth user
-          await admin.from('profiles').delete().eq('id', authUserId)
-          await admin.auth.admin.deleteUser(authUserId)
           throw new Error(`Gagal menautkan ke siswa: ${linkError.message}`)
         }
 
