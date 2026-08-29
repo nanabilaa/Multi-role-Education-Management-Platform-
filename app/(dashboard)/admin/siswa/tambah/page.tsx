@@ -164,7 +164,7 @@ export default function TambahSiswaPage() {
               htmlFor="alamat"
             >
               <div className="relative">
-                <MapPin className="pointer-events-none absolute left-4 top-4 h-4 w-4 text-slate-400" />
+                <MapPin className="pointer-events-none absolute left-4 top-4 z-10 h-4 w-4 text-slate-400" />
 
                 <textarea
                   id="alamat"
