@@ -5,10 +5,12 @@ import {
   CheckCircle2,
   ChevronDown,
   Clock3,
+  FileText,
   UserRound,
 } from 'lucide-react'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import StudentWorkDisplay from '@/components/ortu/StudentWorkDisplay'
 
 type SiswaRow = {
   id: string
@@ -23,6 +25,14 @@ type JurnalRow = {
   foto_url: string | null
   foto_validasi_url: string | null
   foto_validasi_path: string | null
+}
+
+type JurnalSiswaRow = {
+  id: string
+  sesi_siswa_id: string
+  soal_tugas_url: string | null
+  soal_tugas_path: string | null
+  catatan: string | null
 }
 
 type SesiRow = {
@@ -43,6 +53,7 @@ type SesiSiswaRow = {
   deskripsi: string | null
   siswa: SiswaRow | SiswaRow[] | null
   sesi: SesiRow | SesiRow[] | null
+  jurnal_siswa: JurnalSiswaRow | JurnalSiswaRow[] | null
 }
 
 function one<T>(value: T | T[] | null | undefined): T | null {
@@ -117,6 +128,13 @@ export default async function OrtuJurnalPage() {
               foto_validasi_url,
               foto_validasi_path
             )
+          ),
+          jurnal_siswa (
+            id,
+            sesi_siswa_id,
+            soal_tugas_url,
+            soal_tugas_path,
+            catatan
           )
         `
       )
@@ -176,6 +194,7 @@ export default async function OrtuJurnalPage() {
               const jurnal = one(sesi?.jurnal)
               const fotoUrl =
                 jurnal?.foto_validasi_url || jurnal?.foto_url || null
+              const jurnalSiswa = one(row.jurnal_siswa)
 
               return (
                 <details
@@ -280,6 +299,20 @@ export default async function OrtuJurnalPage() {
                           <p className="mt-2 whitespace-pre-line text-sm font-medium leading-6 text-slate-600">
                             {row.deskripsi || '-'}
                           </p>
+                        </div>
+
+                        {/* Student Work (Soal/Tugas) */}
+                        <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+                          <div className="mb-3 flex items-center gap-2">
+                            <FileText className="h-4 w-4 text-slate-500" />
+                            <p className="text-sm font-bold text-slate-900">
+                              Soal/Tugas {siswa?.nama || 'Murid'}
+                            </p>
+                          </div>
+                          <StudentWorkDisplay
+                            studentName={siswa?.nama || 'Murid'}
+                            work={jurnalSiswa}
+                          />
                         </div>
                       </div>
 

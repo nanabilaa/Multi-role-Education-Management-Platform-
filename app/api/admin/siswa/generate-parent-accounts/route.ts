@@ -7,7 +7,8 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
 
-const PROCESS_BATCH_SIZE = 5
+const EMAIL_DOMAIN = 'bimbelcbs.my.id'
+const PROCESS_BATCH_SIZE = 3
 
 type StudentRow = {
   id: string
@@ -16,14 +17,6 @@ type StudentRow = {
   aktif: boolean | null
   ortu_id: string | null
   nama_ortu?: string | null
-}
-
-type ExistingProfile = {
-  id: string
-  full_name: string | null
-  role: string | null
-  email: string | null
-  login_code: string | null
 }
 
 type GenerationResult = {
@@ -37,106 +30,151 @@ type GenerationResult = {
   error: string | null
 }
 
-/**
- * Mengambil password awal akun orang tua dari environment.
- *
- * Password tidak disimpan langsung di source code.
- * Jika environment variable belum tersedia,
- * proses dihentikan dengan error yang jelas.
- */
 function getDefaultParentPassword(): string {
-  const password =
-    process.env.PARENT_INITIAL_PASSWORD?.trim()
-
+  const password = process.env.PARENT_INITIAL_PASSWORD?.trim()
   if (!password) {
-    throw new Error(
-      'PARENT_INITIAL_PASSWORD belum dikonfigurasi di environment.',
-    )
+    throw new Error('PARENT_INITIAL_PASSWORD belum dikonfigurasi di environment.')
   }
-
   return password
 }
 
-function cleanNameForLogin(value: string) {
-  return value
+function slugifyStudentName(name: string): string {
+  return name
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
-    .replace(/[^a-z0-9]/g, '')
-    .slice(0, 40)
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/\/+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
 }
 
-function buildLoginCode(student: StudentRow) {
-  const namePart = cleanNameForLogin(student.nama) || 'anak'
-  return `ortu${namePart}@cbs.id`
+function buildBaseLoginCode(student: StudentRow): string {
+  const nameSlug = slugifyStudentName(student.nama) || 'anak'
+  return `ortu-${nameSlug}`
 }
 
-function buildInternalEmail(
-  loginCode: string,
-) {
-  return `${loginCode}@example.com`
+function buildEmail(loginCode: string): string {
+  return `${loginCode}@${EMAIL_DOMAIN}`
 }
 
-async function findExistingProfile(
-  admin: ReturnType<
-    typeof createAdminClient
-  >,
-  loginCode: string,
-  email: string,
-): Promise<ExistingProfile | null> {
-  const byLoginCode = await admin
+/**
+ * Get all existing login codes from profiles table
+ * to avoid collisions with already-existing accounts
+ */
+async function getExistingLoginCodes(
+  admin: ReturnType<typeof createAdminClient>
+): Promise<Set<string>> {
+  const { data, error } = await admin
     .from('profiles')
-    .select(
-      'id, full_name, role, email, login_code',
-    )
-    .eq('login_code', loginCode)
-    .maybeSingle()
+    .select('login_code')
+    .eq('role', 'ortu')
+    .not('login_code', 'is', null)
 
-  if (byLoginCode.error) {
-    throw new Error(
-      byLoginCode.error.message,
-    )
+  if (error) {
+    console.warn('Warning: Could not fetch existing login codes:', error.message)
+    return new Set()
   }
 
-  if (byLoginCode.data) {
-    return byLoginCode.data as ExistingProfile
+  const loginCodes = new Set<string>()
+  for (const row of data ?? []) {
+    if (row.login_code) {
+      loginCodes.add(row.login_code)
+    }
+  }
+  return loginCodes
+}
+
+/**
+ * Find next available login code with incrementing suffix
+ */
+function findAvailableLoginCode(
+  baseLoginCode: string,
+  existingLogins: Set<string>
+): string {
+  // Check base login code first
+  if (!existingLogins.has(baseLoginCode)) {
+    return baseLoginCode
   }
 
-  const byEmail = await admin
-    .from('profiles')
-    .select(
-      'id, full_name, role, email, login_code',
-    )
-    .eq('email', email)
-    .maybeSingle()
-
-  if (byEmail.error) {
-    throw new Error(
-      byEmail.error.message,
-    )
+  // Try incrementing suffixes: -2, -3, -4, ...
+  let counter = 2
+  while (counter <= 999) {
+    const candidate = `${baseLoginCode}-${counter}`
+    if (!existingLogins.has(candidate)) {
+      return candidate
+    }
+    counter++
   }
 
-  return (
-    (byEmail.data as ExistingProfile | null) ??
-    null
-  )
+  throw new Error(`Tidak dapat menemukan login code yang tersedia untuk: ${baseLoginCode}`)
+}
+
+/**
+ * Pre-compute unique login codes for entire batch BEFORE creating any accounts.
+ * This prevents race conditions by resolving all collisions upfront.
+ */
+function preComputeLoginCodes(
+  students: StudentRow[],
+  existingLogins: Set<string>
+): Map<string, string> {
+  // Count occurrences of each base login code
+  const baseLoginCounts = new Map<string, number>()
+
+  for (const student of students) {
+    const baseCode = buildBaseLoginCode(student)
+    baseLoginCounts.set(baseCode, (baseLoginCounts.get(baseCode) || 0) + 1)
+  }
+
+  // Generate unique login codes for each student
+  const studentToLogin = new Map<string, string>()
+  const usedLogins = new Set(existingLogins) // Start with existing logins
+
+  for (const student of students) {
+    const baseCode = buildBaseLoginCode(student)
+
+    // Check if this base code has duplicates in the batch
+    const countInBatch = baseLoginCounts.get(baseCode) || 0
+
+    if (countInBatch > 1) {
+      // Multiple students with same name - need to assign -2, -3, etc.
+      // Find the first available slot
+      let counter = existingLogins.has(baseCode) ? 2 : 1
+      let found = false
+
+      while (counter <= 999) {
+        const candidate = counter === 1 ? baseCode : `${baseCode}-${counter}`
+        if (!usedLogins.has(candidate)) {
+          studentToLogin.set(student.id, candidate)
+          usedLogins.add(candidate)
+          found = true
+          break
+        }
+        counter++
+      }
+
+      if (!found) {
+        throw new Error(`Tidak dapat menemukan login code untuk: ${student.nama}`)
+      }
+    } else {
+      // Unique name in this batch - just find next available
+      const loginCode = findAvailableLoginCode(baseCode, usedLogins)
+      studentToLogin.set(student.id, loginCode)
+      usedLogins.add(loginCode)
+    }
+  }
+
+  return studentToLogin
 }
 
 export async function POST() {
   try {
-    /*
-     * Ambil password saat endpoint dijalankan.
-     *
-     * Karena fungsi getDefaultParentPassword()
-     * memiliki return type string, TypeScript
-     * mengetahui bahwa nilai ini tidak mungkin
-     * undefined setelah baris ini berhasil.
-     */
-    const defaultParentPassword =
-      getDefaultParentPassword()
+    const defaultParentPassword = getDefaultParentPassword()
 
-    const sessionClient =
-      await createClient()
+    const sessionClient = await createClient()
+    const admin = createAdminClient()
 
     const {
       data: { user },
@@ -145,63 +183,15 @@ export async function POST() {
 
     if (userError || !user) {
       return NextResponse.json(
-        {
-          error:
-            'Sesi login tidak ditemukan. Silakan login kembali.',
-        },
-        {
-          status: 401,
-        },
+        { error: 'Sesi login tidak ditemukan. Silakan login kembali.' },
+        { status: 401 }
       )
     }
 
-    const {
-      data: currentRole,
-      error: roleError,
-    } = await sessionClient.rpc(
-      'current_user_role',
-    )
-
-    if (roleError) {
-      return NextResponse.json(
-        {
-          error:
-            `Gagal memeriksa role akun: ${roleError.message}`,
-        },
-        {
-          status: 500,
-        },
-      )
-    }
-
-    if (
-      !['admin', 'superadmin'].includes(
-        String(currentRole),
-      )
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            'Hanya admin atau superadmin yang boleh menjalankan proses ini.',
-        },
-        {
-          status: 403,
-        },
-      )
-    }
-
-    const admin = createAdminClient()
-
-    const [
-      activeCountResult,
-      studentsResult,
-    ] = await Promise.all([
+    const [activeCountResult, studentsResult] = await Promise.all([
       admin
         .from('siswa')
-        .select('id', {
-          count: 'exact',
-          head: true,
-        })
+        .select('id', { count: 'exact', head: true })
         .eq('aktif', true),
 
       admin
@@ -209,459 +199,212 @@ export async function POST() {
         .select('*')
         .eq('aktif', true)
         .is('ortu_id', null)
-        .order('nama', {
-          ascending: true,
-        }),
+        .order('nama', { ascending: true }),
     ])
 
     if (activeCountResult.error) {
-      throw new Error(
-        `Gagal menghitung siswa aktif: ${activeCountResult.error.message}`,
-      )
+      throw new Error(`Gagal menghitung siswa aktif: ${activeCountResult.error.message}`)
     }
 
     if (studentsResult.error) {
-      throw new Error(
-        `Gagal mengambil siswa: ${studentsResult.error.message}`,
-      )
+      throw new Error(`Gagal mengambil siswa: ${studentsResult.error.message}`)
     }
 
-    const students =
-      (studentsResult.data ??
-        []) as StudentRow[]
-
-    const totalActive =
-      activeCountResult.count ?? 0
-
-    const skippedExisting = Math.max(
-      totalActive - students.length,
-      0,
-    )
+    const students = (studentsResult.data ?? []) as StudentRow[]
+    const totalActive = activeCountResult.count ?? 0
+    const skippedExisting = Math.max(totalActive - students.length, 0)
 
     if (students.length === 0) {
       return NextResponse.json({
-        message:
-          'Semua siswa aktif sudah memiliki akun orang tua.',
-
+        message: 'Semua siswa aktif sudah memiliki akun orang tua.',
         summary: {
           total_active: totalActive,
           candidates: 0,
           created: 0,
           linked: 0,
           failed: 0,
-          skipped_existing:
-            skippedExisting,
+          skipped_existing: skippedExisting,
         },
-
         results: [],
       })
     }
 
-    const results: GenerationResult[] =
-      []
+    // =====================================================
+    // STEP 1: Get ALL existing login codes from database
+    // =====================================================
+    const existingLogins = await getExistingLoginCodes(admin)
 
-    const processStudent = async (
-      student: StudentRow,
-    ): Promise<GenerationResult> => {
-      const loginCode =
-        buildLoginCode(student)
+    // =====================================================
+    // STEP 2: Pre-compute unique login codes for entire batch
+    // This prevents race conditions
+    // =====================================================
+    const studentLoginMap = preComputeLoginCodes(students, existingLogins)
 
-      const email =
-        buildInternalEmail(loginCode)
+    const results: GenerationResult[] = []
 
-      const parentName =
-        student.nama_ortu?.trim() ||
-        `Orang Tua ${student.nama}`
+    // =====================================================
+    // STEP 3: Process SEQUENTIALLY to avoid race conditions
+    // =====================================================
+    for (let i = 0; i < students.length; i++) {
+      const student = students[i]
+      const loginCode = studentLoginMap.get(student.id)!
+
+      if (!loginCode) {
+        results.push({
+          siswa_id: student.id,
+          nama_siswa: student.nama,
+          kelas: student.kelas || '-',
+          nama_ortu: student.nama_ortu || `Orang Tua ${student.nama}`,
+          login_code: '',
+          password: defaultParentPassword,
+          status: 'gagal',
+          error: 'Login code tidak ditemukan',
+        })
+        continue
+      }
+
+      const email = buildEmail(loginCode)
+      const parentName = student.nama_ortu?.trim() || `Orang Tua ${student.nama}`
 
       try {
-        const existingProfile =
-          await findExistingProfile(
-            admin,
-            loginCode,
-            email,
-          )
+        // Check if profile already exists with this login code
+        const { data: existingProfile } = await admin
+          .from('profiles')
+          .select('id, role')
+          .eq('login_code', loginCode)
+          .maybeSingle()
 
-        /*
-         * Jika akun dengan login_code atau email
-         * yang sama sudah pernah dibuat,
-         * akun tersebut tidak dibuat ulang.
-         *
-         * Profile diperbarui lalu akun
-         * ditautkan kembali ke siswa.
-         *
-         * Password awal akun ditentukan
-         * melalui konfigurasi server.
-         */
         if (existingProfile) {
-          if (
-            existingProfile.role !== 'ortu'
-          ) {
-            throw new Error(
-              'ID Login atau email sudah dipakai oleh akun yang bukan role orang tua.',
-            )
+          // Profile exists - update and link
+          if (existingProfile.role !== 'ortu') {
+            throw new Error('Login sudah dipakai oleh akun non-ortu.')
           }
 
-          const {
-            error:
-              profileUpdateError,
-          } = await admin
+          const { error: updateError } = await admin
             .from('profiles')
             .update({
               full_name: parentName,
-              role: 'ortu',
               email,
-              login_code: loginCode,
-              updated_at:
-                new Date().toISOString(),
+              updated_at: new Date().toISOString(),
             })
-            .eq(
-              'id',
-              existingProfile.id,
-            )
+            .eq('id', existingProfile.id)
 
-          if (profileUpdateError) {
-            throw new Error(
-              profileUpdateError.message,
-            )
+          if (updateError) {
+            throw new Error(`Gagal update profile: ${updateError.message}`)
           }
 
-          const {
-            error: passwordError,
-          } =
-            await admin.auth.admin.updateUserById(
-              existingProfile.id,
-              {
-                password:
-                  defaultParentPassword,
-              },
-            )
+          // Reset password
+          const { error: pwdError } = await admin.auth.admin.updateUserById(
+            existingProfile.id,
+            { password: defaultParentPassword }
+          )
 
-          if (passwordError) {
-            throw new Error(
-              `Gagal mengatur password akun lama: ${passwordError.message}`,
-            )
+          if (pwdError) {
+            throw new Error(`Gagal reset password: ${pwdError.message}`)
           }
 
-          const {
-            error: linkError,
-          } = await admin
+          // Link to student
+          const { error: linkError } = await admin
             .from('siswa')
-            .update({
-              ortu_id:
-                existingProfile.id,
-            })
+            .update({ ortu_id: existingProfile.id })
             .eq('id', student.id)
             .is('ortu_id', null)
 
           if (linkError) {
-            throw new Error(
-              `Gagal menautkan akun ke siswa: ${linkError.message}`,
-            )
+            throw new Error(`Gagal menautkan: ${linkError.message}`)
           }
 
-          return {
+          results.push({
             siswa_id: student.id,
-            nama_siswa:
-              student.nama,
-            kelas:
-              student.kelas || '-',
-            nama_ortu:
-              parentName,
-            login_code:
-              loginCode,
-            password:
-              defaultParentPassword,
-            status:
-              'ditautkan',
+            nama_siswa: student.nama,
+            kelas: student.kelas || '-',
+            nama_ortu: parentName,
+            login_code: loginCode,
+            password: defaultParentPassword,
+            status: 'ditautkan',
             error: null,
-          }
-        }
-
-        /*
-         * Coba menggunakan RPC CBS
-         * yang sudah tersedia.
-         */
-        const rpcResult =
-          await sessionClient.rpc(
+          })
+        } else {
+          // =====================================================
+          // Create NEW account using RPC
+          // =====================================================
+          const { data: rpcResult, error: rpcError } = await admin.rpc(
             'create_cbs_auth_user',
             {
-              user_email:
-                email,
-
-              user_password:
-                defaultParentPassword,
-
-              user_full_name:
-                parentName,
-
-              user_role:
-                'ortu',
-            },
+              user_email: email,
+              user_password: defaultParentPassword,
+              user_full_name: parentName,
+              user_role: 'ortu',
+              user_phone: null,
+            }
           )
 
-        let profileId = String(
-          rpcResult.data || '',
-        )
-
-        /*
-         * Fallback ke Supabase Admin API
-         * apabila RPC gagal.
-         *
-         * Tetap berjalan server-side
-         * menggunakan admin client.
-         */
-        if (
-          rpcResult.error ||
-          !profileId
-        ) {
-          const adminCreateResult =
-            await admin.auth.admin.createUser(
-              {
-                email,
-
-                password:
-                  defaultParentPassword,
-
-                email_confirm: true,
-
-                user_metadata: {
-                  full_name:
-                    parentName,
-
-                  role:
-                    'ortu',
-
-                  login_code:
-                    loginCode,
-                },
-              },
-            )
-
-          if (
-            adminCreateResult.error ||
-            !adminCreateResult.data
-              .user
-          ) {
-            const rpcMessage =
-              rpcResult.error
-                ?.message
-                ? `RPC: ${rpcResult.error.message}. `
-                : ''
-
-            throw new Error(
-              `${rpcMessage}${
-                adminCreateResult
-                  .error?.message ||
-                'Admin API tidak mengembalikan akun baru.'
-              }`,
-            )
+          if (rpcError) {
+            throw new Error(`RPC error: ${rpcError.message}`)
           }
 
-          profileId =
-            adminCreateResult
-              .data.user.id
-        }
+          if (!rpcResult) {
+            throw new Error('RPC tidak mengembalikan user ID')
+          }
 
-        /*
-         * Pastikan profile akun orang tua
-         * tersedia dan memiliki login_code.
-         */
-        const {
-          error: profileError,
-        } = await admin
-          .from('profiles')
-          .upsert(
-            {
-              id: profileId,
-              full_name:
-                parentName,
-              role: 'ortu',
-              email,
-              login_code:
-                loginCode,
-              updated_at:
-                new Date().toISOString(),
-            },
-            {
-              onConflict: 'id',
-            },
-          )
+          const parentUserId = rpcResult as string
 
-        if (profileError) {
-          await admin.auth.admin.deleteUser(
-            profileId,
-          )
+          // Link to student
+          const { error: linkError } = await admin
+            .from('siswa')
+            .update({ ortu_id: parentUserId })
+            .eq('id', student.id)
 
-          throw new Error(
-            `Gagal menyimpan profile orang tua: ${profileError.message}`,
-          )
-        }
+          if (linkError) {
+            throw new Error(`Gagal menautkan ke siswa: ${linkError.message}`)
+          }
 
-        /*
-         * Hubungkan siswa dengan
-         * profile orang tua.
-         */
-        const {
-          error: linkError,
-        } = await admin
-          .from('siswa')
-          .update({
-            ortu_id: profileId,
+          results.push({
+            siswa_id: student.id,
+            nama_siswa: student.nama,
+            kelas: student.kelas || '-',
+            nama_ortu: parentName,
+            login_code: loginCode,
+            password: defaultParentPassword,
+            status: 'berhasil',
+            error: null,
           })
-          .eq('id', student.id)
-          .is('ortu_id', null)
-
-        if (linkError) {
-          await admin.auth.admin.deleteUser(
-            profileId,
-          )
-
-          throw new Error(
-            `Gagal menghubungkan siswa dengan akun orang tua: ${linkError.message}`,
-          )
         }
-
-        return {
-          siswa_id:
-            student.id,
-
-          nama_siswa:
-            student.nama,
-
-          kelas:
-            student.kelas || '-',
-
-          nama_ortu:
-            parentName,
-
-          login_code:
-            loginCode,
-
-          password:
-            defaultParentPassword,
-
-          status:
-            'berhasil',
-
-          error: null,
-        }
-      } catch (processError) {
-        return {
-          siswa_id:
-            student.id,
-
-          nama_siswa:
-            student.nama,
-
-          kelas:
-            student.kelas || '-',
-
-          nama_ortu:
-            parentName,
-
-          login_code:
-            loginCode,
-
-          password:
-            defaultParentPassword,
-
-          status:
-            'gagal',
-
-          error:
-            processError instanceof Error
-              ? processError.message
-              : 'Terjadi kesalahan yang tidak diketahui.',
-        }
+      } catch (err) {
+        results.push({
+          siswa_id: student.id,
+          nama_siswa: student.nama,
+          kelas: student.kelas || '-',
+          nama_ortu: parentName,
+          login_code: loginCode,
+          password: defaultParentPassword,
+          status: 'gagal',
+          error: err instanceof Error ? err.message : 'Unknown error',
+        })
       }
     }
 
-    /*
-     * Proses per batch agar tidak
-     * mengirim seluruh request
-     * secara bersamaan.
-     */
-    for (
-      let index = 0;
-      index < students.length;
-      index += PROCESS_BATCH_SIZE
-    ) {
-      const batch =
-        students.slice(
-          index,
-          index +
-            PROCESS_BATCH_SIZE,
-        )
-
-      const batchResults =
-        await Promise.all(
-          batch.map(
-            processStudent,
-          ),
-        )
-
-      results.push(
-        ...batchResults,
-      )
+    const summary = {
+      total_active: totalActive,
+      candidates: students.length,
+      created: results.filter((r) => r.status === 'berhasil').length,
+      linked: results.filter((r) => r.status === 'ditautkan').length,
+      failed: results.filter((r) => r.status === 'gagal').length,
+      skipped_existing: skippedExisting,
     }
 
-    const created =
-      results.filter(
-        (item) =>
-          item.status ===
-          'berhasil',
-      ).length
-
-    const linked =
-      results.filter(
-        (item) =>
-          item.status ===
-          'ditautkan',
-      ).length
-
-    const failed =
-      results.filter(
-        (item) =>
-          item.status ===
-          'gagal',
-      ).length
-
     return NextResponse.json({
-      message:
-        failed > 0
-          ? `${created + linked} akun selesai diproses dan ${failed} akun gagal.`
-          : `${created + linked} akun orang tua berhasil diproses.`,
-
-      summary: {
-        total_active:
-          totalActive,
-
-        candidates:
-          students.length,
-
-        created,
-
-        linked,
-
-        failed,
-
-        skipped_existing:
-          skippedExisting,
-      },
-
+      message: `Berhasil membuat ${summary.created} akun dan menautkan ${summary.linked} akun.`,
+      summary,
       results,
     })
-  } catch (error) {
+  } catch (err) {
+    console.error('GENERATE PARENT ACCOUNTS ERROR:', err)
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : 'Gagal membuat akun orang tua.',
+        error: err instanceof Error ? err.message : 'Terjadi kesalahan saat membuat akun orang tua.',
       },
-      {
-        status: 500,
-      },
+      { status: 500 }
     )
   }
 }

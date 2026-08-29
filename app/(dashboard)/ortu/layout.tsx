@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import OrtuSidebar from '@/components/ortu/OrtuSidebar'
+import MobileLogoutButton from '@/components/ortu/MobileLogoutButton'
 import Link from 'next/link'
 import {
   BookOpenCheck,
@@ -48,6 +49,7 @@ export default async function OrtuLayout({
           <MobileNavItem href="/ortu/jurnal" label="Jurnal" icon={<BookOpenCheck className="h-4 w-4" />} />
           <MobileNavItem href="/ortu/tagihan" label="SPP" icon={<WalletCards className="h-4 w-4" />} />
           <MobileNavItem href="/ortu/profil" label="Profil" icon={<UserRound className="h-4 w-4" />} />
+          <MobileLogoutButton />
         </div>
       </nav>
     </div>
