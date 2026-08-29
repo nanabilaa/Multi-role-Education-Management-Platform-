@@ -21,6 +21,7 @@ import {
 
 import { useAuth } from '@/hooks/useAuth'
 import { cn, getInitials } from '@/lib/utils'
+import Avatar from '@/components/ui/Avatar'
 
 const navItems = [
   {
@@ -111,19 +112,10 @@ export default function Sidebar() {
           onClick={closeMobile}
           className="flex items-center gap-3 rounded-[20px] border border-white/10 bg-white/10 p-3 transition hover:bg-white/15"
         >
-        <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-[14px] border border-white/15 bg-white">
-  <Image
-    src="/images/logo bimbel.jpg"
-    alt="Logo CBS"
-    fill
-    priority
-    sizes="44px"
-    className="object-cover"
-  />
-</div>
+          <Avatar src={profile?.avatar_url} alt={adminName} size="md" />
           <div className="min-w-0">
             <p className="truncate text-sm font-black leading-tight tracking-tight text-white">
-              CBS System
+              {adminName}
             </p>
 
             <p className="mt-0.5 truncate text-[10px] font-bold uppercase tracking-[0.12em] text-white/55">

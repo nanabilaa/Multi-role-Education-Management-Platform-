@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useEffect, useState } from 'react'
 import {
   BookOpenCheck,
   CalendarDays,
@@ -12,6 +13,7 @@ import {
   Wallet,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import Avatar from '@/components/ui/Avatar'
 
 const menuItems = [
   {
@@ -44,6 +46,26 @@ const menuItems = [
 export default function TentorSidebar() {
   const pathname = usePathname()
   const supabase = createClient()
+  const [userName, setUserName] = useState('')
+  const [userAvatar, setUserAvatar] = useState<string | null>(null)
+
+  useEffect(() => {
+    async function loadUser() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('full_name, avatar_url')
+          .eq('id', user.id)
+          .single()
+        if (profile) {
+          setUserName(profile.full_name || '')
+          setUserAvatar(profile.avatar_url)
+        }
+      }
+    }
+    loadUser()
+  }, [supabase])
 
   async function handleLogout() {
     await supabase.auth.signOut()
@@ -55,13 +77,10 @@ export default function TentorSidebar() {
       <div className="sticky top-5 flex max-h-[calc(100vh-40px)] flex-col">
         <div className="rounded-[26px] border border-[#DDE9DB] bg-white p-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#F3F8F1] text-[#063D27]">
-              <GraduationCap className="h-5 w-5" />
-            </div>
-
+            <Avatar src={userAvatar} alt={userName} size="md" />
             <div>
               <p className="text-sm font-black leading-tight text-[#063D27]">
-                CBS System
+                {userName || 'Tentor'}
               </p>
               <p className="mt-1 text-xs font-semibold text-slate-400">
                 Portal Tentor

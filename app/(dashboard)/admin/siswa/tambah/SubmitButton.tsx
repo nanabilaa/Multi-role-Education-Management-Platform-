@@ -1,7 +1,7 @@
 'use client'
 
 import { useFormStatus } from 'react-dom'
-import { Loader2, Save } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 
 export default function SubmitButton() {
   const { pending } = useFormStatus()
@@ -18,10 +18,7 @@ export default function SubmitButton() {
           Menyimpan...
         </>
       ) : (
-        <>
-          <Save className="h-4 w-4" />
-          Simpan Siswa
-        </>
+        'Simpan Siswa'
       )}
     </button>
   )
