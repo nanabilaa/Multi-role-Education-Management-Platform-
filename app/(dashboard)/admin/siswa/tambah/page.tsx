@@ -362,11 +362,13 @@ function InputWithIcon({
 }) {
   return (
     <div className="relative">
-      <div className="pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2 text-slate-400">
+      <div className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-slate-400">
         {icon}
       </div>
 
-      {children}
+      <div className="pl-9">
+        {children}
+      </div>
     </div>
   )
 }
