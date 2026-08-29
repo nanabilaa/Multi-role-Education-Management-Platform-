@@ -35,8 +35,8 @@ type LoginSlide = {
   description: string
 }
 
-// Domain untuk akun orang tua - sesuai format yang diharapkan: ortuadheen@cbs.id
-const CBS_PARENT_EMAIL_DOMAIN = 'cbs.id'
+// Domain untuk akun orang tua - sesuai format yang diharapkan: ortu-adheen@bimbelcbs.my.id
+const CBS_PARENT_EMAIL_DOMAIN = 'bimbelcbs.my.id'
 
 const SLIDES: LoginSlide[] = [
   {
