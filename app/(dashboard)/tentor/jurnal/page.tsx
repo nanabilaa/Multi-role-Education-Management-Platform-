@@ -155,14 +155,16 @@ export default function TentorJurnalPage() {
       .order('jam_mulai', { ascending: false })
 
     if (fetchError) {
-      console.log(fetchError)
-      setError(fetchError.message)
+      console.error('ERROR fetching sessions for tentor:', fetchError)
+      setError(`Gagal memuat sesi: ${fetchError.message}`)
+      setSessions([])
       setLoading(false)
       return
     }
 
     const rows = (data || []) as SessionRow[]
     setSessions(rows)
+    setError('')  // Reset error on success
 
     if (!selectedId && rows.length > 0) {
       const firstUnlocked = rows.find((row) => !one(row.jurnal)?.id)
