@@ -141,7 +141,16 @@ export default async function OrtuJurnalPage() {
       .in('siswa_id', siswaIds)
 
     if (error) {
-      console.log(error)
+      console.error('ERROR fetching jurnal for ortu:', error)
+      return (
+        <div className="p-6 text-red-600">
+          <h2 className="text-lg font-bold">Gagal memuat jurnal</h2>
+          <p className="mt-2 text-sm">{error.message}</p>
+          <pre className="mt-4 overflow-auto rounded bg-red-50 p-4 text-xs">
+            {JSON.stringify(error, null, 2)}
+          </pre>
+        </div>
+      )
     }
 
     jurnalRows = ((data || []) as SesiSiswaRow[])
