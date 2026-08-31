@@ -153,10 +153,14 @@ export default async function OrtuJurnalPage() {
       )
     }
 
+    console.log('[DEBUG /ortu/jurnal] Raw data rows:', data?.length || 0)
+    console.log('[DEBUG /ortu/jurnal] First row sample:', JSON.stringify(data?.[0], null, 2))
+    
     jurnalRows = ((data || []) as SesiSiswaRow[])
       .filter((row) => {
         const sesi = one(row.sesi)
         const jurnal = one(sesi?.jurnal)
+        console.log('[DEBUG /ortu/jurnal] Filter check - sesi:', sesi?.id, 'jurnal:', jurnal?.id, 'jurnal_siswa:', row.jurnal_siswa)
         return Boolean(jurnal?.id)
       })
       .sort((a, b) => {
@@ -172,6 +176,8 @@ export default async function OrtuJurnalPage() {
 
         return dateB - dateA
       })
+    
+    console.log('[DEBUG /ortu/jurnal] Final jurnalRows count:', jurnalRows.length)
   }
 
   return (

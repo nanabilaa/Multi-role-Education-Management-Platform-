@@ -146,6 +146,14 @@ export default function JurnalFormClient({
         for (const student of studentWorks) {
           const fotoFile = formData.get(`foto_${student.sesiSiswaId}`) as File | null
           if (fotoFile && fotoFile.size > 0) {
+            // Convert File to base64
+            const fotoBase64 = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader()
+              reader.onload = () => resolve(reader.result as string)
+              reader.onerror = reject
+              reader.readAsDataURL(fotoFile)
+            })
+
             // Handle new photo upload via API
             const response = await fetch('/api/tentor/jurnal-siswa', {
               method: 'POST',
@@ -156,6 +164,8 @@ export default function JurnalFormClient({
                 sesiId,
                 catatan: student.catatan,
                 intent,
+                fotoFile: fotoBase64,
+                fotoPathLama: student.fotoPath,
               }),
             })
 
