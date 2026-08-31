@@ -210,6 +210,10 @@ export default async function OrtuJurnalPage() {
               const fotoUrl =
                 jurnal?.foto_validasi_url || jurnal?.foto_url || null
               const jurnalSiswa = one(row.jurnal_siswa)
+              
+              // DEBUG: Log jurnal_siswa fields
+              console.log('[DEBUG /ortu/jurnal] jurnal_siswa:', JSON.stringify(row.jurnal_siswa, null, 2))
+              console.log('[DEBUG /ortu/jurnal] jurnalSiswa after one():', JSON.stringify(jurnalSiswa, null, 2))
 
               return (
                 <details

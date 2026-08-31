@@ -210,6 +210,7 @@ export async function POST(request: NextRequest) {
     }
     
     console.log('[DEBUG] jurnal_siswa upserted successfully:', jurnalSiswa)
+    console.log('[DEBUG] Final response:', { success: true, jurnalSiswaId: jurnalSiswa.id, fotoUrl, fotoPath })
 
     return NextResponse.json({
       success: true,
