@@ -16,7 +16,25 @@ async function getTentorSesiData() {
     data: { user },
   } = await supabase.auth.getUser()
 
+  console.log('[DEBUG tentor/sesi] auth user:', user?.id)
+
   if (!user) return []
+
+  // Check profile
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('id, role')
+    .eq('id', user.id)
+    .maybeSingle()
+  console.log('[DEBUG tentor/sesi] profile:', profile)
+
+  // First check ALL sesi without filter to see if RLS is blocking
+  const { data: allSesi, error: allError } = await supabase
+    .from('sesi')
+    .select('id, tentor_id, tanggal, status')
+    .limit(20)
+  console.log('[DEBUG tentor/sesi] ALL sesi visible to user:', allSesi?.length, allSesi?.map(s => ({ id: s.id, tentor_id: s.tentor_id })))
+  if (allError) console.log('[DEBUG tentor/sesi] all sesi error:', allError)
 
   const { data, error } = await supabase
     .from('sesi')
@@ -46,8 +64,9 @@ async function getTentorSesiData() {
     .order('tanggal', { ascending: false })
     .order('jam_mulai', { ascending: false })
 
+  console.log('[DEBUG tentor/sesi] filtered sesi count:', data?.length)
   if (error) {
-    console.log('TENTOR SESI ERROR:', error)
+    console.log('[DEBUG tentor/sesi] FILTERED ERROR:', error)
     return []
   }
 
