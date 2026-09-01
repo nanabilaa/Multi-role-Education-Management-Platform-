@@ -432,12 +432,16 @@ export default async function JurnalSesiPage({
 
       // ALWAYS upsert jurnal_siswa for every student
       // This ensures row exists even without photo/catatan
-      console.log('[DEBUG jurnal] Upserting jurnal_siswa:', {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'unknown'
+      const hostname = (() => {
+        try { return new URL(supabaseUrl).hostname } catch { return 'parse-error' }
+      })()
+      console.log('[DEBUG jurnal] BEFORE upsert:', {
+        hostname,
+        nodeEnv: process.env.NODE_ENV,
+        jurnalUuid,
         sesi_siswa_id: row.id,
-        jurnal_id: jurnalUuid,
-        soal_tugas_url: soalFotoUrl,
-        soal_tugas_path: soalFotoPath,
-        catatan: soalCatatan || null,
+        has_soalFotoUrl: !!soalFotoUrl,
       })
       const { data: upsertData, error: jurnalSiswaError } = await supabase
         .from('jurnal_siswa')
@@ -459,6 +463,19 @@ export default async function JurnalSesiPage({
         console.error('jurnal_siswa error:', jurnalSiswaError)
         redirectJurnalError(targetSesiId, 'Gagal menyimpan soal/tugas murid')
       }
+
+      // VERIFY: Immediately read back to confirm insert worked
+      const verify = await supabase
+        .from('jurnal_siswa')
+        .select('*')
+        .eq('jurnal_id', jurnalUuid)
+        .eq('sesi_siswa_id', row.id)
+        .maybeSingle()
+      console.log('[DEBUG verify after upsert]', {
+        found: !!verify.data,
+        data: verify.data,
+        error: verify.error,
+      })
     }
 
     let fotoUrl = fotoLamaUrl || null
