@@ -81,26 +81,33 @@ export async function POST(request: NextRequest) {
     let fotoPath: string | null = null
 
     // Handle photo upload if provided
+    console.log('[DEBUG] fotoFile present:', !!fotoFile, fotoFile ? `length=${fotoFile.length}` : 'null')
+    
     if (fotoFile) {
       try {
         // Decode base64
         const base64Data = fotoFile.replace(/^data:image\/\w+;base64,/, '')
+        console.log('[DEBUG] base64Data length:', base64Data.length)
+        
         const binaryString = atob(base64Data)
         const bytes = new Uint8Array(binaryString.length)
         for (let i = 0; i < binaryString.length; i++) {
           bytes[i] = binaryString.charCodeAt(i)
         }
         const blob = new Blob([bytes], { type: 'image/jpeg' })
+        console.log('[DEBUG] blob created, size:', blob.size)
 
         // Compress image
         const compressed = await compressImage(
           new File([blob], 'photo.jpg', { type: 'image/jpeg' }),
           { maxWidth: 1920, maxHeight: 1920, quality: 0.85, maxSizeMB: 1 }
         )
+        console.log('[DEBUG] compressed, size:', compressed.blob.size)
 
         // Upload to Supabase Storage
         const ext = 'jpg'
         const path = `soal-tugas-siswa/${userId}/${sesiId}/${siswaId}/${Date.now()}.${ext}`
+        console.log('[DEBUG] uploading to path:', path)
 
         const { error: uploadError } = await supabase.storage
           .from('soal-tugas-siswa')
@@ -110,8 +117,10 @@ export async function POST(request: NextRequest) {
           })
 
         if (uploadError) {
+          console.error('[DEBUG] upload error:', uploadError)
           throw new Error(`Upload failed: ${uploadError.message}`)
         }
+        console.log('[DEBUG] upload success')
 
         const { data: urlData } = supabase.storage
           .from('soal-tugas-siswa')
@@ -119,9 +128,11 @@ export async function POST(request: NextRequest) {
 
         fotoUrl = urlData.publicUrl
         fotoPath = path
+        console.log('[DEBUG] fotoUrl:', fotoUrl)
 
         // Delete old photo if exists
         if (fotoPathLama) {
+          console.log('[DEBUG] deleting old photo:', fotoPathLama)
           await supabase.storage.from('soal-tugas-siswa').remove([fotoPathLama])
         }
       } catch (uploadError) {
@@ -167,6 +178,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Upsert jurnal_siswa
+    console.log('[DEBUG] Upserting jurnal_siswa with:', {
+      sesi_siswa_id: sesiSiswaId,
+      jurnal_id: jurnalUuid,
+      soal_tugas_url: fotoUrl,
+      soal_tugas_path: fotoPath,
+      catatan: catatan || null,
+    })
+    
     const { data: jurnalSiswa, error: jurnalSiswaError } = await supabase
       .from('jurnal_siswa')
       .upsert(
@@ -189,6 +208,9 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       )
     }
+    
+    console.log('[DEBUG] jurnal_siswa upserted successfully:', jurnalSiswa)
+    console.log('[DEBUG] Final response:', { success: true, jurnalSiswaId: jurnalSiswa.id, fotoUrl, fotoPath })
 
     return NextResponse.json({
       success: true,

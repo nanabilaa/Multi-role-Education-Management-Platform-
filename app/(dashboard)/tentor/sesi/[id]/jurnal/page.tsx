@@ -197,19 +197,60 @@ export default async function JurnalSesiPage({
     siswaMap.set(row.id, row)
   }
 
-  const muridList = relasiRows.map((row, index) => ({
-    key: row.id || `murid-${index}`,
-    relasiId: row.id,
-    materi: row.materi ?? '',
-    deskripsi: row.deskripsi ?? '',
-    siswa: row.siswa_id ? siswaMap.get(row.siswa_id) ?? null : null,
-  }))
-
   const jurnalRes = await supabase
     .from('jurnal')
     .select('id, catatan_umum, foto_validasi_url, foto_validasi_path')
     .eq('sesi_id', sesiId)
     .maybeSingle()
+
+  // Fetch jurnal_siswa for the existing jurnal to prefill soal_tugas preview
+  const jurnalSiswaMap = new Map<string, { soal_tugas_url: string | null; soal_tugas_path: string | null; catatan: string | null }>()
+  if (jurnalRes.data?.id && relasiRows.length > 0) {
+    const relasiIds = relasiRows.map((r) => r.id)
+    const jurnalSiswaRes = await supabase
+      .from('jurnal_siswa')
+      .select('sesi_siswa_id, soal_tugas_url, soal_tugas_path, catatan')
+      .eq('jurnal_id', jurnalRes.data.id)
+      .in('sesi_siswa_id', relasiIds)
+
+    if (jurnalSiswaRes.error) {
+      console.error('[DEBUG LOAD JURNAL] jurnal_siswa error:', jurnalSiswaRes.error)
+    } else {
+      const jurnalSiswaRows = jurnalSiswaRes.data ?? []
+      console.log('[DEBUG LOAD] jurnal_siswa rows:', jurnalSiswaRows)
+      for (const row of jurnalSiswaRows) {
+        if (typeof row.sesi_siswa_id === 'string') {
+          jurnalSiswaMap.set(row.sesi_siswa_id, {
+            soal_tugas_url: typeof row.soal_tugas_url === 'string' ? row.soal_tugas_url : null,
+            soal_tugas_path: typeof row.soal_tugas_path === 'string' ? row.soal_tugas_path : null,
+            catatan: typeof row.catatan === 'string' ? row.catatan : null,
+          })
+        }
+      }
+      console.log('[DEBUG LOAD] jurnalSiswaMap:', Array.from(jurnalSiswaMap.entries()))
+    }
+  }
+  console.log('[DEBUG LOAD JURNAL] jurnal:', jurnalRes.data)
+
+  const muridList = relasiRows.map((row, index) => {
+    const existing = jurnalSiswaMap.get(row.id)
+    return {
+      key: row.id || `murid-${index}`,
+      relasiId: row.id,
+      materi: row.materi ?? '',
+      deskripsi: row.deskripsi ?? '',
+      siswa: row.siswa_id ? siswaMap.get(row.siswa_id) ?? null : null,
+      existingSoalTugasUrl: existing?.soal_tugas_url ?? null,
+      existingSoalTugasPath: existing?.soal_tugas_path ?? null,
+      existingSoalCatatan: existing?.catatan ?? '',
+    }
+  })
+
+  console.log('[DEBUG LOAD] muridList:', muridList.map(m => ({
+    id: m.relasiId,
+    soal_tugas_url: m.existingSoalTugasUrl,
+    catatan: m.existingSoalCatatan,
+  })))
 
   if (jurnalRes.error) {
     return (
@@ -249,6 +290,18 @@ export default async function JurnalSesiPage({
     'use server'
 
     const supabase = await createClient()
+
+    // DEBUG: Log all FormData keys
+    const allKeys: string[] = []
+    formData.forEach((value, key) => {
+      const isFile = value instanceof File
+      allKeys.push(`${key}${isFile ? ` (File: ${(value as File).name}, ${(value as File).size}b)` : `: ${String(value).substring(0, 50)}`}`)
+    })
+    console.log('[DEBUG saveJurnalAction] All form keys:', allKeys.length, allKeys)
+    const soalFotoKeys = allKeys.filter(k => k.startsWith('soal_foto_'))
+    const soalCatatanKeys = allKeys.filter(k => k.startsWith('soal_catatan_'))
+    console.log('[DEBUG saveJurnalAction] soal_foto_ keys:', soalFotoKeys)
+    console.log('[DEBUG saveJurnalAction] soal_catatan_ keys:', soalCatatanKeys)
 
     const targetSesiId = String(formData.get('sesi_id') || sesiId || '')
     const intent = String(formData.get('intent') || 'save')
@@ -318,10 +371,40 @@ export default async function JurnalSesiPage({
     if (validRows.length === 0) {
       redirectJurnalError(targetSesiId, 'Belum ada murid pada sesi ini')
     }
+    console.log('[DEBUG saveJurnalAction] Processing', validRows.length, 'student rows:', validRows.map(r => r.id))
+
+    // First, find or create jurnal entry
+    let jurnalUuid: string | null = null
+    const jurnalCheck = await supabase
+      .from('jurnal')
+      .select('id')
+      .eq('sesi_id', targetSesiId)
+      .maybeSingle()
+
+    if (jurnalCheck?.data) {
+      jurnalUuid = jurnalCheck.data.id
+    } else {
+      const { data: newJurnal, error: jurnalError } = await supabase
+        .from('jurnal')
+        .insert({
+          sesi_id: targetSesiId,
+          tentor_id: userId,
+          materi: '-',
+        })
+        .select('id')
+        .single()
+
+      if (jurnalError || !newJurnal) {
+        redirectJurnalError(targetSesiId, 'Gagal membuat jurnal')
+      }
+      jurnalUuid = newJurnal.id
+    }
+    console.log('[DEBUG jurnal] jurnalUuid:', jurnalUuid)
 
     for (const row of validRows) {
       const materi = String(formData.get(`materi_${row.id}`) || '').trim()
       const deskripsi = String(formData.get(`deskripsi_${row.id}`) || '').trim()
+      const soalCatatan = String(formData.get(`soal_catatan_${row.id}`) || '').trim()
 
       if (intent === 'close' && (!materi || !deskripsi)) {
         redirectJurnalError(
@@ -341,6 +424,102 @@ export default async function JurnalSesiPage({
       if (updateRes.error) {
         redirectJurnalError(targetSesiId, updateRes.error.message)
       }
+
+      // Handle soal_foto per student - upload to soal-tugas-siswa bucket
+      const soalFoto = formData.get(`soal_foto_${row.id}`)
+      let soalFotoUrl: string | null = null
+      let soalFotoPath: string | null = null
+
+      console.log('[DEBUG jurnal] row.id:', row.id, 'soalFoto instanceof File:', soalFoto instanceof File, 'soalCatatan:', soalCatatan)
+
+      if (soalFoto instanceof File && soalFoto.size > 0) {
+        if (!soalFoto.type.startsWith('image/')) {
+          redirectJurnalError(targetSesiId, 'File soal foto harus berupa gambar')
+        }
+
+        if (soalFoto.size > 5 * 1024 * 1024) {
+          redirectJurnalError(targetSesiId, 'Ukuran foto soal maksimal 5MB')
+        }
+
+        const ext = soalFoto.name.split('.').pop() || 'jpg'
+        // FIX: Object path must NOT include the bucket name
+        const path = `${userId}/${targetSesiId}/${row.id}/${Date.now()}.${ext}`
+        const fileBuffer = await soalFoto.arrayBuffer()
+
+        console.log('[DEBUG jurnal] uploading to path:', path)
+        const uploadRes = await supabase.storage
+          .from('soal-tugas-siswa')
+          .upload(path, fileBuffer, {
+            contentType: soalFoto.type,
+            upsert: true,
+          })
+
+        if (uploadRes.error) {
+          console.error('[DEBUG jurnal] upload error:', uploadRes.error)
+          redirectJurnalError(
+            targetSesiId,
+            `Upload foto soal gagal: ${uploadRes.error.message}`
+          )
+        }
+
+        const { data: publicUrlData } = supabase.storage
+          .from('soal-tugas-siswa')
+          .getPublicUrl(path)
+
+        soalFotoUrl = publicUrlData.publicUrl
+        soalFotoPath = path
+        console.log('[DEBUG STORAGE URL]', {
+          path,
+          publicUrl: soalFotoUrl,
+        })
+      }
+
+      // ALWAYS upsert jurnal_siswa for every student
+      // This ensures row exists even without photo/catatan
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'unknown'
+      const hostname = (() => {
+        try { return new URL(supabaseUrl).hostname } catch { return 'parse-error' }
+      })()
+      console.log('[DEBUG jurnal] BEFORE upsert:', {
+        hostname,
+        nodeEnv: process.env.NODE_ENV,
+        jurnalUuid,
+        sesi_siswa_id: row.id,
+        has_soalFotoUrl: !!soalFotoUrl,
+      })
+      const { data: upsertData, error: jurnalSiswaError } = await supabase
+        .from('jurnal_siswa')
+        .upsert(
+          {
+            sesi_siswa_id: row.id,
+            jurnal_id: jurnalUuid,
+            soal_tugas_url: soalFotoUrl,
+            soal_tugas_path: soalFotoPath,
+            catatan: soalCatatan || null,
+          },
+          { onConflict: 'sesi_siswa_id,jurnal_id' }
+        )
+        .select()
+
+      console.log('[DEBUG jurnal] upsert result:', upsertData, 'error:', jurnalSiswaError)
+
+      if (jurnalSiswaError) {
+        console.error('jurnal_siswa error:', jurnalSiswaError)
+        redirectJurnalError(targetSesiId, 'Gagal menyimpan soal/tugas murid')
+      }
+
+      // VERIFY: Immediately read back to confirm insert worked
+      const verify = await supabase
+        .from('jurnal_siswa')
+        .select('*')
+        .eq('jurnal_id', jurnalUuid)
+        .eq('sesi_siswa_id', row.id)
+        .maybeSingle()
+      console.log('[DEBUG verify after upsert]', {
+        found: !!verify.data,
+        data: verify.data,
+        error: verify.error,
+      })
     }
 
     let fotoUrl = fotoLamaUrl || null
@@ -624,6 +803,7 @@ export default async function JurnalSesiPage({
                             id={`soal_catatan_${item.relasiId}`}
                             name={`soal_catatan_${item.relasiId}`}
                             type="text"
+                            defaultValue={item.existingSoalCatatan}
                             disabled={isSelesai}
                             className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-[#063D27] focus:ring-2 focus:ring-[#063D27]/10 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
                             placeholder="Contoh: Hal 45-46, 5 soal"
@@ -649,6 +829,44 @@ export default async function JurnalSesiPage({
                           <p className="mt-1 text-xs text-slate-400">
                             Format: JPG, PNG. Maksimal 5MB. Foto akan dikompresi otomatis.
                           </p>
+                          {item.existingSoalTugasUrl || item.existingSoalTugasPath ? (
+                            <div className="mt-2">
+                              <p className="text-xs font-medium text-slate-500">Foto tersimpan:</p>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={(() => {
+                                  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+                                  const path = item.existingSoalTugasPath || ''
+                                  const url = item.existingSoalTugasUrl || ''
+
+                                  // Strategy 1: Use path to construct URL (handles old broken paths)
+                                  if (path) {
+                                    // Path might be 'soal-tugas-siswa/tentorId/...' (old broken)
+                                    // or 'tentorId/...' (new correct)
+                                    return `${supabaseUrl}/storage/v1/object/public/soal-tugas-siswa/${path}`
+                                  }
+
+                                  // Strategy 2: Use URL with sanitization
+                                  if (url.includes('/public/soal-tugas-siswa/soal-tugas-siswa/')) {
+                                    return url.replace('/public/soal-tugas-siswa/soal-tugas-siswa/', '/public/soal-tugas-siswa/')
+                                  }
+                                  return url
+                                })()}
+                                alt="Foto soal tersimpan"
+                                className="mt-1 max-h-32 rounded-lg border border-slate-200"
+                              />
+                            </div>
+                          ) : null}
+                          <input
+                            type="hidden"
+                            name={`soal_tugas_lama_url_${item.relasiId}`}
+                            value={item.existingSoalTugasUrl ?? ''}
+                          />
+                          <input
+                            type="hidden"
+                            name={`soal_tugas_lama_path_${item.relasiId}`}
+                            value={item.existingSoalTugasPath ?? ''}
+                          />
                         </div>
                       </div>
                     </div>
