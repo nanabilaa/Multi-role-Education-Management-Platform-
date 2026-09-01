@@ -834,9 +834,10 @@ export default async function JurnalSesiPage({
                               <p className="text-xs font-medium text-slate-500">Foto tersimpan:</p>
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img
-                                src={item.existingSoalTugasUrl}
+                                src={(item.existingSoalTugasUrl ?? '').replace('/public/soal-tugas-siswa/soal-tugas-siswa/', '/public/soal-tugas-siswa/')}
                                 alt="Foto soal tersimpan"
                                 className="mt-1 max-h-32 rounded-lg border border-slate-200"
+                                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
                               />
                             </div>
                           ) : null}
