@@ -834,10 +834,17 @@ export default async function JurnalSesiPage({
                               <p className="text-xs font-medium text-slate-500">Foto tersimpan:</p>
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img
-                                src={(item.existingSoalTugasUrl ?? '').replace('/public/soal-tugas-siswa/soal-tugas-siswa/', '/public/soal-tugas-siswa/')}
+                                src={(() => {
+                                  const url = item.existingSoalTugasUrl ?? ''
+                                  // Try fix: original file was uploaded with 'soal-tugas-siswa/' prefix in path
+                                  // This caused double bucket. Try both URLs.
+                                  if (url.includes('/public/soal-tugas-siswa/soal-tugas-siswa/')) {
+                                    return url.replace('/public/soal-tugas-siswa/soal-tugas-siswa/', '/public/soal-tugas-siswa/')
+                                  }
+                                  return url
+                                })()}
                                 alt="Foto soal tersimpan"
                                 className="mt-1 max-h-32 rounded-lg border border-slate-200"
-                                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
                               />
                             </div>
                           ) : null}
