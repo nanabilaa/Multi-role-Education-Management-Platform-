@@ -462,13 +462,16 @@ export default async function JurnalSesiPage({
           )
         }
 
-        const publicUrlRes = supabase.storage
+        const { data: publicUrlData } = supabase.storage
           .from('soal-tugas-siswa')
           .getPublicUrl(path)
 
-        soalFotoUrl = publicUrlRes.data.publicUrl
+        soalFotoUrl = publicUrlData.publicUrl
         soalFotoPath = path
-        console.log('[DEBUG jurnal] soalFotoUrl:', soalFotoUrl)
+        console.log('[DEBUG STORAGE URL]', {
+          path,
+          publicUrl: soalFotoUrl,
+        })
       }
 
       // ALWAYS upsert jurnal_siswa for every student
