@@ -345,6 +345,7 @@ export default async function JurnalSesiPage({
       }
       jurnalUuid = newJurnal.id
     }
+    console.log('[DEBUG jurnal] jurnalUuid:', jurnalUuid)
 
     for (const row of validRows) {
       const materi = String(formData.get(`materi_${row.id}`) || '').trim()
@@ -375,6 +376,8 @@ export default async function JurnalSesiPage({
       let soalFotoUrl: string | null = null
       let soalFotoPath: string | null = null
 
+      console.log('[DEBUG jurnal] row.id:', row.id, 'soalFoto instanceof File:', soalFoto instanceof File, 'soalCatatan:', soalCatatan)
+
       if (soalFoto instanceof File && soalFoto.size > 0) {
         if (!soalFoto.type.startsWith('image/')) {
           redirectJurnalError(targetSesiId, 'File soal foto harus berupa gambar')
@@ -388,6 +391,7 @@ export default async function JurnalSesiPage({
         const path = `soal-tugas-siswa/${userId}/${targetSesiId}/${row.id}/${Date.now()}.${ext}`
         const fileBuffer = await soalFoto.arrayBuffer()
 
+        console.log('[DEBUG jurnal] uploading to path:', path)
         const uploadRes = await supabase.storage
           .from('soal-tugas-siswa')
           .upload(path, fileBuffer, {
@@ -396,6 +400,7 @@ export default async function JurnalSesiPage({
           })
 
         if (uploadRes.error) {
+          console.error('[DEBUG jurnal] upload error:', uploadRes.error)
           redirectJurnalError(
             targetSesiId,
             `Upload foto soal gagal: ${uploadRes.error.message}`
@@ -408,10 +413,19 @@ export default async function JurnalSesiPage({
 
         soalFotoUrl = publicUrlRes.data.publicUrl
         soalFotoPath = path
+        console.log('[DEBUG jurnal] soalFotoUrl:', soalFotoUrl)
       }
 
-      // Upsert jurnal_siswa with soal_tugas_url
-      const { error: jurnalSiswaError } = await supabase
+      // ALWAYS upsert jurnal_siswa for every student
+      // This ensures row exists even without photo/catatan
+      console.log('[DEBUG jurnal] Upserting jurnal_siswa:', {
+        sesi_siswa_id: row.id,
+        jurnal_id: jurnalUuid,
+        soal_tugas_url: soalFotoUrl,
+        soal_tugas_path: soalFotoPath,
+        catatan: soalCatatan || null,
+      })
+      const { data: upsertData, error: jurnalSiswaError } = await supabase
         .from('jurnal_siswa')
         .upsert(
           {
@@ -423,6 +437,9 @@ export default async function JurnalSesiPage({
           },
           { onConflict: 'sesi_siswa_id,jurnal_id' }
         )
+        .select()
+
+      console.log('[DEBUG jurnal] upsert result:', upsertData, 'error:', jurnalSiswaError)
 
       if (jurnalSiswaError) {
         console.error('jurnal_siswa error:', jurnalSiswaError)
