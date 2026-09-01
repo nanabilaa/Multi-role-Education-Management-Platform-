@@ -216,8 +216,9 @@ export default async function JurnalSesiPage({
     if (jurnalSiswaRes.error) {
       console.error('[DEBUG LOAD JURNAL] jurnal_siswa error:', jurnalSiswaRes.error)
     } else {
-      console.log('[DEBUG LOAD JURNAL] jurnal_siswa count:', jurnalSiswaRes.data?.length || 0)
-      for (const row of jurnalSiswaRes.data ?? []) {
+      const jurnalSiswaRows = jurnalSiswaRes.data ?? []
+      console.log('[DEBUG LOAD] jurnal_siswa rows:', jurnalSiswaRows)
+      for (const row of jurnalSiswaRows) {
         if (typeof row.sesi_siswa_id === 'string') {
           jurnalSiswaMap.set(row.sesi_siswa_id, {
             soal_tugas_url: typeof row.soal_tugas_url === 'string' ? row.soal_tugas_url : null,
@@ -226,11 +227,7 @@ export default async function JurnalSesiPage({
           })
         }
       }
-      console.log('[DEBUG LOAD JURNAL] jurnalSiswaMap size:', jurnalSiswaMap.size)
-      if (jurnalSiswaMap.size > 0) {
-        const sample = Array.from(jurnalSiswaMap.entries())[0]
-        console.log('[DEBUG LOAD JURNAL] sample entry:', sample[0], '->', sample[1])
-      }
+      console.log('[DEBUG LOAD] jurnalSiswaMap:', Array.from(jurnalSiswaMap.entries()))
     }
   }
   console.log('[DEBUG LOAD JURNAL] jurnal:', jurnalRes.data)
@@ -248,6 +245,12 @@ export default async function JurnalSesiPage({
       existingSoalCatatan: existing?.catatan ?? '',
     }
   })
+
+  console.log('[DEBUG LOAD] muridList:', muridList.map(m => ({
+    id: m.relasiId,
+    soal_tugas_url: m.existingSoalTugasUrl,
+    catatan: m.existingSoalCatatan,
+  })))
 
   if (jurnalRes.error) {
     return (
