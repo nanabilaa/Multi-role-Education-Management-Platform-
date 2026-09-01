@@ -197,20 +197,6 @@ export default async function JurnalSesiPage({
     siswaMap.set(row.id, row)
   }
 
-  const muridList = relasiRows.map((row, index) => {
-    const existing = jurnalSiswaMap.get(row.id)
-    return {
-      key: row.id || `murid-${index}`,
-      relasiId: row.id,
-      materi: row.materi ?? '',
-      deskripsi: row.deskripsi ?? '',
-      siswa: row.siswa_id ? siswaMap.get(row.siswa_id) ?? null : null,
-      existingSoalTugasUrl: existing?.soal_tugas_url ?? null,
-      existingSoalTugasPath: existing?.soal_tugas_path ?? null,
-      existingSoalCatatan: existing?.catatan ?? '',
-    }
-  })
-
   const jurnalRes = await supabase
     .from('jurnal')
     .select('id, catatan_umum, foto_validasi_url, foto_validasi_path')
@@ -248,6 +234,20 @@ export default async function JurnalSesiPage({
     }
   }
   console.log('[DEBUG LOAD JURNAL] jurnal:', jurnalRes.data)
+
+  const muridList = relasiRows.map((row, index) => {
+    const existing = jurnalSiswaMap.get(row.id)
+    return {
+      key: row.id || `murid-${index}`,
+      relasiId: row.id,
+      materi: row.materi ?? '',
+      deskripsi: row.deskripsi ?? '',
+      siswa: row.siswa_id ? siswaMap.get(row.siswa_id) ?? null : null,
+      existingSoalTugasUrl: existing?.soal_tugas_url ?? null,
+      existingSoalTugasPath: existing?.soal_tugas_path ?? null,
+      existingSoalCatatan: existing?.catatan ?? '',
+    }
+  })
 
   if (jurnalRes.error) {
     return (
