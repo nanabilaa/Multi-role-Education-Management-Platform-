@@ -829,15 +829,24 @@ export default async function JurnalSesiPage({
                           <p className="mt-1 text-xs text-slate-400">
                             Format: JPG, PNG. Maksimal 5MB. Foto akan dikompresi otomatis.
                           </p>
-                          {item.existingSoalTugasUrl ? (
+                          {item.existingSoalTugasUrl || item.existingSoalTugasPath ? (
                             <div className="mt-2">
                               <p className="text-xs font-medium text-slate-500">Foto tersimpan:</p>
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img
                                 src={(() => {
-                                  const url = item.existingSoalTugasUrl ?? ''
-                                  // Try fix: original file was uploaded with 'soal-tugas-siswa/' prefix in path
-                                  // This caused double bucket. Try both URLs.
+                                  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+                                  const path = item.existingSoalTugasPath || ''
+                                  const url = item.existingSoalTugasUrl || ''
+
+                                  // Strategy 1: Use path to construct URL (handles old broken paths)
+                                  if (path) {
+                                    // Path might be 'soal-tugas-siswa/tentorId/...' (old broken)
+                                    // or 'tentorId/...' (new correct)
+                                    return `${supabaseUrl}/storage/v1/object/public/soal-tugas-siswa/${path}`
+                                  }
+
+                                  // Strategy 2: Use URL with sanitization
                                   if (url.includes('/public/soal-tugas-siswa/soal-tugas-siswa/')) {
                                     return url.replace('/public/soal-tugas-siswa/soal-tugas-siswa/', '/public/soal-tugas-siswa/')
                                   }
