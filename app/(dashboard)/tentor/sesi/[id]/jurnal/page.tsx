@@ -401,7 +401,8 @@ export default async function JurnalSesiPage({
         }
 
         const ext = soalFoto.name.split('.').pop() || 'jpg'
-        const path = `soal-tugas-siswa/${userId}/${targetSesiId}/${row.id}/${Date.now()}.${ext}`
+        // FIX: Object path must NOT include the bucket name
+        const path = `${userId}/${targetSesiId}/${row.id}/${Date.now()}.${ext}`
         const fileBuffer = await soalFoto.arrayBuffer()
 
         console.log('[DEBUG jurnal] uploading to path:', path)
