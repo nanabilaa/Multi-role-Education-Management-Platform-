@@ -319,9 +319,37 @@ export default async function JurnalSesiPage({
       redirectJurnalError(targetSesiId, 'Belum ada murid pada sesi ini')
     }
 
+    // First, find or create jurnal entry
+    let jurnalUuid: string | null = null
+    const jurnalCheck = await supabase
+      .from('jurnal')
+      .select('id')
+      .eq('sesi_id', targetSesiId)
+      .maybeSingle()
+
+    if (jurnalCheck?.data) {
+      jurnalUuid = jurnalCheck.data.id
+    } else {
+      const { data: newJurnal, error: jurnalError } = await supabase
+        .from('jurnal')
+        .insert({
+          sesi_id: targetSesiId,
+          tentor_id: userId,
+          materi: '-',
+        })
+        .select('id')
+        .single()
+
+      if (jurnalError || !newJurnal) {
+        redirectJurnalError(targetSesiId, 'Gagal membuat jurnal')
+      }
+      jurnalUuid = newJurnal.id
+    }
+
     for (const row of validRows) {
       const materi = String(formData.get(`materi_${row.id}`) || '').trim()
       const deskripsi = String(formData.get(`deskripsi_${row.id}`) || '').trim()
+      const soalCatatan = String(formData.get(`soal_catatan_${row.id}`) || '').trim()
 
       if (intent === 'close' && (!materi || !deskripsi)) {
         redirectJurnalError(
@@ -340,6 +368,65 @@ export default async function JurnalSesiPage({
 
       if (updateRes.error) {
         redirectJurnalError(targetSesiId, updateRes.error.message)
+      }
+
+      // Handle soal_foto per student - upload to soal-tugas-siswa bucket
+      const soalFoto = formData.get(`soal_foto_${row.id}`)
+      let soalFotoUrl: string | null = null
+      let soalFotoPath: string | null = null
+
+      if (soalFoto instanceof File && soalFoto.size > 0) {
+        if (!soalFoto.type.startsWith('image/')) {
+          redirectJurnalError(targetSesiId, 'File soal foto harus berupa gambar')
+        }
+
+        if (soalFoto.size > 5 * 1024 * 1024) {
+          redirectJurnalError(targetSesiId, 'Ukuran foto soal maksimal 5MB')
+        }
+
+        const ext = soalFoto.name.split('.').pop() || 'jpg'
+        const path = `soal-tugas-siswa/${userId}/${targetSesiId}/${row.id}/${Date.now()}.${ext}`
+        const fileBuffer = await soalFoto.arrayBuffer()
+
+        const uploadRes = await supabase.storage
+          .from('soal-tugas-siswa')
+          .upload(path, fileBuffer, {
+            contentType: soalFoto.type,
+            upsert: true,
+          })
+
+        if (uploadRes.error) {
+          redirectJurnalError(
+            targetSesiId,
+            `Upload foto soal gagal: ${uploadRes.error.message}`
+          )
+        }
+
+        const publicUrlRes = supabase.storage
+          .from('soal-tugas-siswa')
+          .getPublicUrl(path)
+
+        soalFotoUrl = publicUrlRes.data.publicUrl
+        soalFotoPath = path
+      }
+
+      // Upsert jurnal_siswa with soal_tugas_url
+      const { error: jurnalSiswaError } = await supabase
+        .from('jurnal_siswa')
+        .upsert(
+          {
+            sesi_siswa_id: row.id,
+            jurnal_id: jurnalUuid,
+            soal_tugas_url: soalFotoUrl,
+            soal_tugas_path: soalFotoPath,
+            catatan: soalCatatan || null,
+          },
+          { onConflict: 'sesi_siswa_id,jurnal_id' }
+        )
+
+      if (jurnalSiswaError) {
+        console.error('jurnal_siswa error:', jurnalSiswaError)
+        redirectJurnalError(targetSesiId, 'Gagal menyimpan soal/tugas murid')
       }
     }
 
