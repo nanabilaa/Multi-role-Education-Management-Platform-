@@ -197,19 +197,57 @@ export default async function JurnalSesiPage({
     siswaMap.set(row.id, row)
   }
 
-  const muridList = relasiRows.map((row, index) => ({
-    key: row.id || `murid-${index}`,
-    relasiId: row.id,
-    materi: row.materi ?? '',
-    deskripsi: row.deskripsi ?? '',
-    siswa: row.siswa_id ? siswaMap.get(row.siswa_id) ?? null : null,
-  }))
+  const muridList = relasiRows.map((row, index) => {
+    const existing = jurnalSiswaMap.get(row.id)
+    return {
+      key: row.id || `murid-${index}`,
+      relasiId: row.id,
+      materi: row.materi ?? '',
+      deskripsi: row.deskripsi ?? '',
+      siswa: row.siswa_id ? siswaMap.get(row.siswa_id) ?? null : null,
+      existingSoalTugasUrl: existing?.soal_tugas_url ?? null,
+      existingSoalTugasPath: existing?.soal_tugas_path ?? null,
+      existingSoalCatatan: existing?.catatan ?? '',
+    }
+  })
 
   const jurnalRes = await supabase
     .from('jurnal')
     .select('id, catatan_umum, foto_validasi_url, foto_validasi_path')
     .eq('sesi_id', sesiId)
     .maybeSingle()
+
+  // Fetch jurnal_siswa for the existing jurnal to prefill soal_tugas preview
+  const jurnalSiswaMap = new Map<string, { soal_tugas_url: string | null; soal_tugas_path: string | null; catatan: string | null }>()
+  if (jurnalRes.data?.id && relasiRows.length > 0) {
+    const relasiIds = relasiRows.map((r) => r.id)
+    const jurnalSiswaRes = await supabase
+      .from('jurnal_siswa')
+      .select('sesi_siswa_id, soal_tugas_url, soal_tugas_path, catatan')
+      .eq('jurnal_id', jurnalRes.data.id)
+      .in('sesi_siswa_id', relasiIds)
+
+    if (jurnalSiswaRes.error) {
+      console.error('[DEBUG LOAD JURNAL] jurnal_siswa error:', jurnalSiswaRes.error)
+    } else {
+      console.log('[DEBUG LOAD JURNAL] jurnal_siswa count:', jurnalSiswaRes.data?.length || 0)
+      for (const row of jurnalSiswaRes.data ?? []) {
+        if (typeof row.sesi_siswa_id === 'string') {
+          jurnalSiswaMap.set(row.sesi_siswa_id, {
+            soal_tugas_url: typeof row.soal_tugas_url === 'string' ? row.soal_tugas_url : null,
+            soal_tugas_path: typeof row.soal_tugas_path === 'string' ? row.soal_tugas_path : null,
+            catatan: typeof row.catatan === 'string' ? row.catatan : null,
+          })
+        }
+      }
+      console.log('[DEBUG LOAD JURNAL] jurnalSiswaMap size:', jurnalSiswaMap.size)
+      if (jurnalSiswaMap.size > 0) {
+        const sample = Array.from(jurnalSiswaMap.entries())[0]
+        console.log('[DEBUG LOAD JURNAL] sample entry:', sample[0], '->', sample[1])
+      }
+    }
+  }
+  console.log('[DEBUG LOAD JURNAL] jurnal:', jurnalRes.data)
 
   if (jurnalRes.error) {
     return (
@@ -759,6 +797,7 @@ export default async function JurnalSesiPage({
                             id={`soal_catatan_${item.relasiId}`}
                             name={`soal_catatan_${item.relasiId}`}
                             type="text"
+                            defaultValue={item.existingSoalCatatan}
                             disabled={isSelesai}
                             className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-[#063D27] focus:ring-2 focus:ring-[#063D27]/10 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
                             placeholder="Contoh: Hal 45-46, 5 soal"
@@ -784,6 +823,27 @@ export default async function JurnalSesiPage({
                           <p className="mt-1 text-xs text-slate-400">
                             Format: JPG, PNG. Maksimal 5MB. Foto akan dikompresi otomatis.
                           </p>
+                          {item.existingSoalTugasUrl ? (
+                            <div className="mt-2">
+                              <p className="text-xs font-medium text-slate-500">Foto tersimpan:</p>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={item.existingSoalTugasUrl}
+                                alt="Foto soal tersimpan"
+                                className="mt-1 max-h-32 rounded-lg border border-slate-200"
+                              />
+                            </div>
+                          ) : null}
+                          <input
+                            type="hidden"
+                            name={`soal_tugas_lama_url_${item.relasiId}`}
+                            value={item.existingSoalTugasUrl ?? ''}
+                          />
+                          <input
+                            type="hidden"
+                            name={`soal_tugas_lama_path_${item.relasiId}`}
+                            value={item.existingSoalTugasPath ?? ''}
+                          />
                         </div>
                       </div>
                     </div>
