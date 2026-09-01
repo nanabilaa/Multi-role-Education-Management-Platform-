@@ -3,7 +3,6 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import TentorSidebar from '@/components/tentor/TentorSidebar'
 import {
-  BookOpenCheck,
   CalendarDays,
   Home,
   UserRound,
@@ -53,12 +52,6 @@ export default async function TentorLayout({
             href="/tentor/sesi"
             label="Sesi"
             icon={<CalendarDays className="h-4 w-4" />}
-          />
-
-          <MobileNavItem
-            href="/tentor/jurnal"
-            label="Jurnal"
-            icon={<BookOpenCheck className="h-4 w-4" />}
           />
 
           <MobileNavItem
