@@ -250,6 +250,18 @@ export default async function JurnalSesiPage({
 
     const supabase = await createClient()
 
+    // DEBUG: Log all FormData keys
+    const allKeys: string[] = []
+    formData.forEach((value, key) => {
+      const isFile = value instanceof File
+      allKeys.push(`${key}${isFile ? ` (File: ${(value as File).name}, ${(value as File).size}b)` : `: ${String(value).substring(0, 50)}`}`)
+    })
+    console.log('[DEBUG saveJurnalAction] All form keys:', allKeys.length, allKeys)
+    const soalFotoKeys = allKeys.filter(k => k.startsWith('soal_foto_'))
+    const soalCatatanKeys = allKeys.filter(k => k.startsWith('soal_catatan_'))
+    console.log('[DEBUG saveJurnalAction] soal_foto_ keys:', soalFotoKeys)
+    console.log('[DEBUG saveJurnalAction] soal_catatan_ keys:', soalCatatanKeys)
+
     const targetSesiId = String(formData.get('sesi_id') || sesiId || '')
     const intent = String(formData.get('intent') || 'save')
     const catatanUmum = String(formData.get('catatan_umum') || '').trim()
@@ -318,6 +330,7 @@ export default async function JurnalSesiPage({
     if (validRows.length === 0) {
       redirectJurnalError(targetSesiId, 'Belum ada murid pada sesi ini')
     }
+    console.log('[DEBUG saveJurnalAction] Processing', validRows.length, 'student rows:', validRows.map(r => r.id))
 
     // First, find or create jurnal entry
     let jurnalUuid: string | null = null
