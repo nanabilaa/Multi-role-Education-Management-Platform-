@@ -9,6 +9,7 @@ import {
   LogOut,
   ShieldCheck,
   UsersRound,
+  HardDrive
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -42,6 +43,12 @@ const menuItems = [
     label: 'Backup',
     icon: DatabaseBackup,
     accent: 'text-[#34A853]',
+  },
+  {
+    href: '/superadmin/cleanup',
+    label: 'Cleanup',
+    icon: HardDrive,
+    accent: 'text-[#EA4335]',
   },
 ]
 
@@ -139,7 +146,7 @@ export default function SuperadminSidebar() {
       </aside>
 
       <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-[#E3E7E5] bg-white/95 px-2 pb-[max(8px,env(safe-area-inset-bottom))] pt-2 backdrop-blur-xl lg:hidden">
-        <div className="grid grid-cols-5">
+        <div className="grid grid-cols-6">
           {menuItems.map((item) => {
             const Icon = item.icon
             const active = isActive(item.href)
