@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import TentorSidebar from '@/components/tentor/TentorSidebar'
+import MobileLogoutButton from '@/components/ortu/MobileLogoutButton'
 import {
   CalendarDays,
   Home,
@@ -65,6 +66,7 @@ export default async function TentorLayout({
             label="Profil"
             icon={<UserRound className="h-4 w-4" />}
           />
+          <MobileLogoutButton />
         </div>
       </nav>
     </div>
