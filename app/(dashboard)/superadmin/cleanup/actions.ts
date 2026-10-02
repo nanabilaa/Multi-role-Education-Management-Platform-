@@ -89,15 +89,15 @@ export async function deleteFotoTugasSiswa() {
   return { count: deletedCount }
 }
 
-export async function deleteSesiDibatalkan() {
+export async function deleteSesiBelumSelesai() {
   const supabase = createAdminClient()
   
   const { data, error, count } = await supabase
     .from('sesi')
     .delete({ count: 'exact' })
-    .eq('status', 'dibatalkan')
+    .neq('status', 'selesai')
 
-  if (error) throw new Error('Gagal menghapus sesi dibatalkan')
+  if (error) throw new Error('Gagal menghapus sesi belum selesai')
 
   revalidatePath('/superadmin/cleanup')
   return { count: count || 0 }

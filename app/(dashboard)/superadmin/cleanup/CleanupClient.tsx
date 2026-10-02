@@ -15,7 +15,7 @@ import {
 import {
   deleteFotoValidasi,
   deleteFotoTugasSiswa,
-  deleteSesiDibatalkan,
+  deleteSesiBelumSelesai,
   deleteFeedbackDitutup
 } from './actions'
 
@@ -59,12 +59,12 @@ export default function CleanupClient() {
     },
     {
       id: 'sesi-batal',
-      title: 'Hapus Sesi Dibatalkan',
-      desc: 'Menghapus permanen semua riwayat jadwal sesi yang statusnya "Dibatalkan" di database.',
+      title: 'Hapus Sesi Belum Selesai',
+      desc: 'Menghapus permanen semua riwayat jadwal sesi yang statusnya BUKAN "Selesai" (misal: Terjadwal, Berlangsung, Dibatalkan).',
       icon: <CalendarX2 className="h-5 w-5" />,
-      actionFn: deleteSesiDibatalkan,
-      successMsg: 'Sesi dibatalkan berhasil dihapus permanen',
-      btnLabel: 'Hapus Sesi Batal',
+      actionFn: deleteSesiBelumSelesai,
+      successMsg: 'Sesi belum selesai berhasil dihapus permanen',
+      btnLabel: 'Hapus Sesi Aktif/Batal',
       color: 'amber'
     },
     {
