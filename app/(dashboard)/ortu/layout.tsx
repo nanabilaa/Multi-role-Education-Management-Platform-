@@ -7,6 +7,7 @@ import {
   BookOpenCheck,
   CalendarDays,
   Home,
+  MessageSquare,
   UserRound,
   WalletCards,
 } from 'lucide-react'
@@ -43,11 +44,12 @@ export default async function OrtuLayout({
       </div>
 
       <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-[#E2EBDD] bg-white/95 px-3 py-2 backdrop-blur md:hidden">
-        <div className="mx-auto grid max-w-md grid-cols-5 gap-1">
+        <div className="mx-auto grid max-w-md grid-cols-6 gap-1">
           <MobileNavItem href="/ortu/dashboard" label="Home" icon={<Home className="h-4 w-4" />} />
           <MobileNavItem href="/ortu/jadwal" label="Jadwal" icon={<CalendarDays className="h-4 w-4" />} />
           <MobileNavItem href="/ortu/jurnal" label="Jurnal" icon={<BookOpenCheck className="h-4 w-4" />} />
           <MobileNavItem href="/ortu/tagihan" label="SPP" icon={<WalletCards className="h-4 w-4" />} />
+          <MobileNavItem href="/ortu/saran" label="Saran" icon={<MessageSquare className="h-4 w-4" />} />
           <MobileNavItem href="/ortu/profil" label="Profil" icon={<UserRound className="h-4 w-4" />} />
           <MobileLogoutButton />
         </div>

@@ -15,6 +15,7 @@ import {
   HelpCircle,
   LogOut,
   Menu,
+  MessageSquare,
   X,
   ChevronRight,
 } from 'lucide-react'
@@ -58,6 +59,11 @@ const navItems = [
 ]
 
 const bottomItems = [
+  {
+    href: '/admin/feedback',
+    label: 'Feedback Ortu',
+    icon: MessageSquare,
+  },
   {
     href: '/admin/pengaturan',
     label: 'Pengaturan',

@@ -9,6 +9,7 @@ import {
   CalendarDays,
   LayoutDashboard,
   LogOut,
+  MessageSquare,
   UserRound,
   WalletCards,
 } from 'lucide-react'
@@ -35,6 +36,11 @@ const menuItems = [
     label: 'Tagihan',
     href: '/ortu/tagihan',
     icon: WalletCards,
+  },
+  {
+    label: 'Kritik & Saran',
+    href: '/ortu/saran',
+    icon: MessageSquare,
   },
   {
     label: 'Profil',
