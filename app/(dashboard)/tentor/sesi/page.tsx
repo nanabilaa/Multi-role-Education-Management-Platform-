@@ -160,7 +160,7 @@ export default async function TentorSesiPage() {
               {sesiList.map((sesi: any) => {
                 const siswaList = sesi.sesi_siswa ?? []
                 const jurnal = sesi.jurnal ?? []
-                const sudahAdaJurnal = jurnal.length > 0
+                const sudahAdaJurnal = Array.isArray(jurnal) ? jurnal.length > 0 : !!jurnal
 
                 return (
                   <article

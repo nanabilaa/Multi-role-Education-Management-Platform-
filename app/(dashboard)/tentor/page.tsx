@@ -131,7 +131,8 @@ async function getTentorDashboardData() {
 
   const sesiBelumJurnal = sesiSelesai.filter((sesi: any) => {
     const jurnal = sesi.jurnal
-    return !jurnal || jurnal.length === 0
+    if (!jurnal) return true
+    return Array.isArray(jurnal) ? jurnal.length === 0 : !jurnal
   })
 
   return {
