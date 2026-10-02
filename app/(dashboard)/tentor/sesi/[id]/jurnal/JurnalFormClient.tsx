@@ -410,7 +410,6 @@ function StudentWorkCardClient({
               id={`foto_${student.sesiSiswaId}`}
               name={`foto_${student.sesiSiswaId}`}
               accept="image/*"
-              capture="environment"
               onChange={handleFileChange}
               disabled={disabled || isUploading}
               className="absolute inset-0 z-10 cursor-pointer opacity-0"
