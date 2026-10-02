@@ -126,7 +126,7 @@ export default function AdminFeedbackClient() {
     if (error) {
       setErrorMsg(error.message)
     } else {
-      const rows = (data || []) as FeedbackRow[]
+      const rows = (data || []) as unknown as FeedbackRow[]
       setFeedbacks(rows)
 
       // Inisialisasi responseMap & statusMap dari data
