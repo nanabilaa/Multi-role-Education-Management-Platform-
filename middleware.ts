@@ -53,6 +53,7 @@ export async function middleware(request: NextRequest) {
   }
 
   if (user && pathname.startsWith('/login')) {
+    const activeRole = request.cookies.get('active_role')?.value
     const { data: profile } = await supabase
       .from('profiles')
       .select('role')
