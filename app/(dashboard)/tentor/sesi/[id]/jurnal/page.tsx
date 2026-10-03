@@ -406,12 +406,7 @@ export default async function JurnalSesiPage({
       const deskripsi = String(formData.get(`deskripsi_${row.id}`) || '').trim()
       const soalCatatan = String(formData.get(`soal_catatan_${row.id}`) || '').trim()
 
-      if (intent === 'close' && (!materi || !deskripsi)) {
-        redirectJurnalError(
-          targetSesiId,
-          'Semua murid wajib diisi materi dan deskripsinya sebelum sesi ditutup'
-        )
-      }
+      // Tidak wajib mengisi materi/deskripsi per murid saat validasi kelas
 
       const updateRes = await supabase
         .from('sesi_siswa')

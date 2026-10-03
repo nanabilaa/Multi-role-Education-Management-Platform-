@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   LogOut,
   MessageSquare,
+  TrendingUp,
   UserRound,
   WalletCards,
 } from 'lucide-react'
@@ -18,9 +19,19 @@ import Avatar from '@/components/ui/Avatar'
 
 const menuItems = [
   {
-    label: 'Beranda',
+    label: 'Dashboard Anak',
     href: '/ortu/dashboard',
     icon: LayoutDashboard,
+  },
+  {
+    label: 'LatSol',
+    href: '/ortu/latihan',
+    icon: BookOpenCheck,
+  },
+  {
+    label: 'Perkembangan',
+    href: '/ortu/perkembangan',
+    icon: TrendingUp,
   },
   {
     label: 'Jadwal',

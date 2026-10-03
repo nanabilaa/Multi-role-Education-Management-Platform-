@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import TentorSidebar from '@/components/tentor/TentorSidebar'
 import MobileLogoutButton from '@/components/ortu/MobileLogoutButton'
 import {
+  BookOpenCheck,
   CalendarDays,
   Home,
   UserRound,
@@ -55,6 +56,11 @@ export default async function TentorLayout({
             icon={<CalendarDays className="h-4 w-4" />}
           />
 
+          <MobileNavItem
+            href="/tentor/latihan"
+            label="LatSol"
+            icon={<BookOpenCheck className="h-4 w-4" />}
+          />
           <MobileNavItem
             href="/tentor/honor"
             label="Honor"

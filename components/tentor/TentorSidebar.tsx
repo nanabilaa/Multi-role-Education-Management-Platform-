@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import {
+  BookOpenCheck,
   CalendarDays,
   GraduationCap,
   LayoutDashboard,
@@ -24,6 +25,11 @@ const menuItems = [
     label: 'Sesi',
     href: '/tentor/sesi',
     icon: CalendarDays,
+  },
+  {
+    label: 'LatSol',
+    href: '/tentor/latihan',
+    icon: BookOpenCheck,
   },
   {
     label: 'Honor',
