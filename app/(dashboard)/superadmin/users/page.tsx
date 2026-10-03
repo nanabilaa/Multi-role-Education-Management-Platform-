@@ -1411,6 +1411,7 @@ function UserCrudCard({
           </p>
         )}
       </div>
+      <div className='mt-4'><RoleManager userId={profile.id} currentRoles={['admin','tentor','ortu']} /></div>
     </details>
   )
 }
