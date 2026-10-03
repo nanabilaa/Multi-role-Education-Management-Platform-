@@ -38,7 +38,7 @@ export default function RoleManager({ userId, currentRoles }: { userId: string; 
           <button
             key={r}
             onClick={() => toggle(r)}
-            className={`rounded-full px-3 py-1 text-xs font-bold ${roles.includes(r) ? 'bg-[#063D27] text-white' : 'bg-slate-800 text-white'}`}
+            className={`rounded-full px-3 py-1 text-xs font-bold ${roles.includes(r) ? 'bg-[#4ADE80] text-slate-900' : 'bg-slate-800 text-white'}`}
           >
             {r}
           </button>
