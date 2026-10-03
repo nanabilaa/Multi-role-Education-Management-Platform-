@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { getActiveRole } from '@/lib/role-session'
 import TentorSidebar from '@/components/tentor/TentorSidebar'
 import MobileLogoutButton from '@/components/ortu/MobileLogoutButton'
 import {
@@ -30,7 +31,9 @@ export default async function TentorLayout({
     .eq('id', user.id)
     .single()
 
-  if (profile?.role !== 'tentor') redirect('/login')
+  const activeRole = getActiveRole()
+  const allowed = activeRole === 'tentor' || profile?.role === 'tentor'
+  if (!allowed) redirect('/login')
 
   return (
     <div className="min-h-screen bg-[#F8FAF7]">
