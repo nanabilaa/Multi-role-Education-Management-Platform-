@@ -18,7 +18,7 @@ import Avatar from '@/components/ui/Avatar'
 
 const menuItems = [
   {
-    label: 'Beranda',
+    label: 'Dashboard Anak',
     href: '/ortu/dashboard',
     icon: LayoutDashboard,
   },
