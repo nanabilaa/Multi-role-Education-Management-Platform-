@@ -15,6 +15,7 @@ import {
   UsersRound,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import RoleManager from '@/components/superadmin/RoleManager'
 
 type Role = 'superadmin' | 'admin' | 'tentor' | 'ortu'
 
