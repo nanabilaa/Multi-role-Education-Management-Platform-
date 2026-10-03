@@ -23,6 +23,7 @@ export default function SuperadminCleanupPage() {
         </section>
 
         <CleanupClient />
+        <section className="rounded-3xl border border-[#ECEFF1] bg-white p-6 md:p-8 mt-8"><h2 className="text-xl font-bold">Cleanup LatSol</h2><p className="text-sm text-slate-500 mb-4">Jalankan SQL ini untuk menghapus semua data LatSol dan membebaskan penyimpanan.</p><a href="/scripts/superadmin-cleanup-latsol.sql" className="inline-block bg-red-600 text-white px-4 py-2 rounded-xl hover:bg-red-700">Lihat Script SQL</a></section>
       </div>
     </main>
   )

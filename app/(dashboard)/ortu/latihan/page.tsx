@@ -16,7 +16,9 @@ export default function LatihanTersediaPage() {
       const supabase = createClient()
       const { data: siswa } = await supabase.from('siswa').select('id').eq('ortu_id', profile?.id).single()
       if (!siswa) { setLoading(false); return }
-      const { data } = await supabase.from('latihan_soals').select('*').eq('status', 'dipublikasikan').order('created_at', { ascending: false })
+      const { data: siswaData } = await supabase.from('siswa').select('kelas').eq('id', siswa.id).single()
+      const kelasSiswa = siswaData?.kelas || ''
+      const { data } = await supabase.from('latihan_soals').select('*').eq('status', 'dipublikasikan').eq('kelas', kelasSiswa).order('created_at', { ascending: false })
       // Cek pengerjaan
       const { data: pengerjaans } = await supabase.from('pengerjaans').select('latihan_id').eq('siswa_id', siswa.id)
       const doneIds = new Set(pengerjaans?.map((p: any) => p.latihan_id) || [])

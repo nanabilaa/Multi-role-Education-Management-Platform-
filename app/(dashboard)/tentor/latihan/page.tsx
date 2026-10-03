@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Plus, BookOpen, Clock, CheckCircle2, FileText } from 'lucide-react'
+import { Plus, BookOpen, Clock, Trash2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/useAuth'
 
@@ -10,6 +10,8 @@ export default function LatihanListPage() {
   const { profile } = useAuth()
   const [items, setItems] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [filter, setFilter] = useState('semua')
+  const [kelasFilter, setKelasFilter] = useState('semua')
 
   useEffect(() => {
     async function load() {
@@ -34,9 +36,20 @@ export default function LatihanListPage() {
         </Link>
       </div>
 
+      <div className="flex flex-wrap gap-2 mb-4 items-center">
+        {['semua','draft','dipublikasikan'].map(f => (
+          <button key={f} onClick={() => setFilter(f)} className={`px-3 py-1 rounded-full text-xs font-bold ${filter === f ? 'bg-emerald-700 text-white' : 'bg-emerald-50 text-emerald-700'}`}>{f === 'semua' ? 'Semua' : f === 'draft' ? 'Draft' : 'Dipublikasikan'}</button>
+        ))}
+        <select className="rounded-xl border border-emerald-200 px-3 py-1 text-xs" value={kelasFilter} onChange={e => setKelasFilter(e.target.value)}>
+          <option value="semua">Semua Kelas</option>
+          <option value="5 SD">5 SD</option>
+          <option value="6 SD">6 SD</option>
+        </select>
+      </div>
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {loading ? <p>Memuat...</p> : items.map((l) => (
-          <div key={l.id} className="bg-white rounded-2xl border border-emerald-100 shadow-sm p-6 hover:shadow-md transition">
+        {loading ? <p>Memuat...</p> : items.filter((l: any) => (filter === 'semua' || l.status === filter) && (kelasFilter === 'semua' || l.kelas === kelasFilter)).map((l) => (
+          <div key={l.id} className="bg-white rounded-2xl border border-emerald-100 shadow-sm p-6 hover:shadow-md transition relative">
+            <button onClick={async () => { const supabase = createClient(); await supabase.from('latihan_soals').delete().eq('id', l.id); window.location.reload() }} className="absolute top-4 right-4 text-red-500 hover:text-red-700" title="Hapus"><Trash2 size={18}/></button>
             <div className="flex items-center gap-2 text-emerald-700 font-semibold mb-2">
               <BookOpen size={18} /> {l.mapel}
             </div>
@@ -45,6 +58,7 @@ export default function LatihanListPage() {
             <div className="flex items-center gap-4 text-xs text-slate-400 mb-4">
               <span className="flex items-center gap-1"><Clock size={14}/> {l.deadline ? new Date(l.deadline).toLocaleDateString('id-ID') : '-'}</span>
               <span className={`px-2 py-0.5 rounded-full font-medium ${l.status === 'dipublikasikan' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{l.status}</span>
+              <button onClick={async () => { const supabase = createClient(); await supabase.from('latihan_soals').update({ status: l.status === 'draft' ? 'dipublikasikan' : 'draft' }).eq('id', l.id); window.location.reload() }} className="text-xs bg-emerald-600 text-white px-2 py-0.5 rounded-full hover:bg-emerald-700">{l.status === 'draft' ? 'Publish' : 'Draft'}</button>
             </div>
             <div className="flex gap-2">
               <Link href={`/tentor/latihan/${l.id}/bank-soal`} className="flex-1 text-center text-sm bg-emerald-50 text-emerald-700 py-2 rounded-lg hover:bg-emerald-100">Bank Soal</Link>

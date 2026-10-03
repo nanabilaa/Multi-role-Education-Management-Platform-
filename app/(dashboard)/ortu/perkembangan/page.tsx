@@ -28,21 +28,14 @@ export default function PerkembanganPage() {
       <h1 className="text-3xl font-bold text-emerald-900 mb-2">Perkembangan Belajar</h1>
       <p className="text-emerald-600 mb-8">Pantau hasil latihan anak secara berkala.</p>
       <div className="grid md:grid-cols-3 gap-6 mb-8">
-        <div className="bg-emerald-900 text-white rounded-2xl p-6 shadow-lg">
-          <h3 className="font-bold text-lg mb-1">Matematika</h3>
-          <p className="text-3xl font-extrabold">85</p>
-          <p className="text-emerald-200 text-sm">Latihan Pecahan Dasar</p>
-        </div>
-        <div className="bg-emerald-800 text-white rounded-2xl p-6 shadow-lg">
-          <h3 className="font-bold text-lg mb-1">IPA</h3>
-          <p className="text-3xl font-extrabold">90</p>
-          <p className="text-emerald-200 text-sm">Latihan Ekosistem</p>
-        </div>
-        <div className="bg-emerald-700 text-white rounded-2xl p-6 shadow-lg">
-          <h3 className="font-bold text-lg mb-1">Bahasa Inggris</h3>
-          <p className="text-3xl font-extrabold">78</p>
-          <p className="text-emerald-200 text-sm">Latihan Vocabulary</p>
-        </div>
+        {data.slice(0,3).map((p: any) => (
+          <div key={p.id} className="bg-emerald-900 text-white rounded-2xl p-6 shadow-lg">
+            <h3 className="font-bold text-lg mb-1">{p.latihan_soals?.mapel || 'Latihan'}</h3>
+            <p className="text-3xl font-extrabold">{p.nilai ?? '-'}</p>
+            <p className="text-emerald-200 text-sm">{p.latihan_soals?.judul || '-'}</p>
+          </div>
+        ))}
+        {data.length === 0 && <div className="col-span-full text-center text-slate-400">Belum ada hasil latihan.</div>}
       </div>
       <div className="bg-white rounded-2xl border border-emerald-100 shadow-sm p-6">
         <h2 className="text-xl font-bold text-slate-800 mb-4">Riwayat Latihan</h2>

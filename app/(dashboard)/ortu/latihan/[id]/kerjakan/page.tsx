@@ -24,9 +24,19 @@ export default function KerjakanPage() {
       setLatihan(l)
       const { data: s } = await supabase.from('soals').select('*').eq('latihan_id', id).order('created_at')
       setSoals(s || [])
+      const { data: siswa } = await supabase.from('siswa').select('id').eq('ortu_id', profile?.id).single()
+      if (siswa) {
+        const { data: p } = await supabase.from('pengerjaans').select('*, jawaban_siswas(*, soals(*))').eq('siswa_id', siswa.id).eq('latihan_id', id).single()
+        if (p) {
+          setDone(true)
+          const ans: Record<string, string> = {}
+          p.jawaban_siswas?.forEach((j: any) => { ans[j.soal_id] = j.jawaban })
+          setAnswers(ans)
+        }
+      }
     }
     load()
-  }, [id])
+  }, [id, profile])
 
   async function handleSubmit() {
     const supabase = createClient()
@@ -38,11 +48,19 @@ export default function KerjakanPage() {
   }
 
   if (done) return (
-    <div className="max-w-3xl mx-auto px-6 py-12 text-center">
-      <CheckCircle2 size={64} className="mx-auto text-emerald-600 mb-4" />
+    <div className="max-w-3xl mx-auto px-6 py-12">
+      <button onClick={() => router.back()} className="flex items-center gap-2 text-emerald-700 mb-6 hover:underline"><ArrowLeft size={18}/> Kembali</button>
       <h2 className="text-3xl font-bold text-emerald-900 mb-2">Latihan Selesai</h2>
-      <p className="text-emerald-600 mb-6">Hasil akan ditampilkan di dashboard anak.</p>
-      <button onClick={() => router.push('/ortu/dashboard')} className="bg-emerald-700 text-white px-6 py-3 rounded-xl">Kembali ke Dashboard</button>
+      <p className="text-emerald-600 mb-6">Jawaban Anda:</p>
+      <div className="bg-white rounded-2xl border border-emerald-100 shadow-sm p-6 space-y-3">
+        {Object.entries(answers).map(([soal_id, jawaban]) => (
+          <div key={soal_id} className="flex justify-between border-b border-emerald-50 pb-2">
+            <span className="text-sm text-slate-600">Soal {soal_id}</span>
+            <span className="font-bold text-emerald-700">{jawaban}</span>
+          </div>
+        ))}
+      </div>
+      <button onClick={() => router.push('/ortu/dashboard')} className="mt-6 bg-emerald-700 text-white px-6 py-3 rounded-xl">Kembali ke Dashboard</button>
     </div>
   )
 
