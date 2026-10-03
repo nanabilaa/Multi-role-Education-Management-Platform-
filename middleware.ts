@@ -60,6 +60,17 @@ export async function middleware(request: NextRequest) {
       .eq('id', user.id)
       .single()
 
+    const { data: userRolesData } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', user.id)
+    const userRoles = (userRolesData || []).map((r: any) => r.role)
+    const hasMultiple = userRoles.length > 1
+
+    if (hasMultiple && !activeRole) {
+      return NextResponse.redirect(new URL('/role-picker', request.url))
+    }
+
     const role = profile?.role
 
     if (role === 'admin') {
