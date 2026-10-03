@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 export default function RoleManager({ userId, currentRoles }: { userId: string; currentRoles: string[] }) {
   const [roles, setRoles] = useState<string[]>(currentRoles)
   const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
 
   useEffect(() => {
     fetch(`/api/superadmin/user-roles?userId=${userId}`)
@@ -24,6 +25,8 @@ export default function RoleManager({ userId, currentRoles }: { userId: string; 
       body: JSON.stringify({ userId, roles }),
     })
     setSaving(false)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
   }
 
   const all = ['superadmin', 'admin', 'tentor', 'ortu']
@@ -42,6 +45,7 @@ export default function RoleManager({ userId, currentRoles }: { userId: string; 
         ))}
       </div>
       <button onClick={save} disabled={saving} className="mt-4 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700">Simpan</button>
+      {saved && <span className="ml-3 text-xs font-bold text-emerald-600">✓ Tersimpan</span>}
     </div>
   )
 }
