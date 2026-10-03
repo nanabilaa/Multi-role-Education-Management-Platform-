@@ -1,8 +1,16 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 export default function RoleManager({ userId, currentRoles }: { userId: string; currentRoles: string[] }) {
   const [roles, setRoles] = useState<string[]>(currentRoles)
   const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    fetch(`/api/superadmin/user-roles?userId=${userId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.roles && data.roles.length > 0) setRoles(data.roles)
+      })
+  }, [userId])
 
   const toggle = (r: string) => {
     setRoles((prev) => (prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r]))
